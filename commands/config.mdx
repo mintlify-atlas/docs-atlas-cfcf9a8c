@@ -1,0 +1,119 @@
+---
+title: 'desloppify config'
+description: 'Manage project configuration settings'
+---
+
+## Overview
+
+The `config` command allows you to view, set, and reset Desloppify configuration settings for your project. Configuration is stored in `.desloppify/config.json` and persists across scans.
+
+## Usage
+
+```bash
+desloppify config [show|set|unset]
+```
+
+## Subcommands
+
+### Show configuration
+
+Display all configuration keys with their current values and descriptions.
+
+```bash
+desloppify config
+# or explicitly
+desloppify config show
+```
+
+**Output format:**
+- Each configuration key is displayed with its current value
+- Default values are marked with `(default)`
+- Descriptions explain what each setting controls
+
+**Example output:**
+```
+Desloppify Configuration
+
+exclude_patterns          *.pyc, __pycache__ (default)
+                          Glob patterns to exclude from scanning
+
+zone_overrides            2 entries
+                          Manual zone classifications for specific files
+
+check_update_days         7 (default)
+                          Days between update checks
+```
+
+### Set a value
+
+Update a configuration key to a new value.
+
+```bash
+desloppify config set <key> <value>
+```
+
+**Examples:**
+
+```bash
+# Set check interval to 14 days
+desloppify config set check_update_days 14
+
+# Disable update checks entirely
+desloppify config set check_update_days 0
+
+# Add an exclude pattern
+desloppify config set exclude_patterns "*.test.js,node_modules"
+```
+
+<Note>
+The command validates the value type against the configuration schema. Invalid values will produce an error.
+</Note>
+
+### Reset to default
+
+Reset a configuration key back to its default value.
+
+```bash
+desloppify config unset <key>
+```
+
+**Examples:**
+
+```bash
+# Reset update check interval to default
+desloppify config unset check_update_days
+
+# Reset exclude patterns to defaults
+desloppify config unset exclude_patterns
+```
+
+## Common configuration keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `exclude_patterns` | list | `[]` | Glob patterns to exclude from scanning |
+| `zone_overrides` | dict | `{}` | Manual zone classifications for files |
+| `check_update_days` | int | `7` | Days between checking for updates (0 = never) |
+| `needs_rescan` | bool | `false` | Flag indicating configuration changed |
+
+## When to use
+
+<AccordionGroup>
+  <Accordion title="Adjust scanning behavior">
+    Use `config set exclude_patterns` to skip directories or file types that shouldn't be analyzed (e.g., generated code, vendor libraries).
+  </Accordion>
+
+  <Accordion title="Manage update notifications">
+    Set `check_update_days` to control how often Desloppify checks for new versions. Set to `0` to disable update checks.
+  </Accordion>
+
+  <Accordion title="Review current settings">
+    Run `desloppify config` without arguments to see all current configuration values and understand what's customized vs default.
+  </Accordion>
+</AccordionGroup>
+
+## Related commands
+
+- [`desloppify exclude`](/commands/exclude) - Quick command to add exclude patterns
+- [`desloppify zone`](/commands/zone) - Manage zone overrides
+- [`desloppify scan`](/commands/scan) - Re-scan after configuration changes

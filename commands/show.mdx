@@ -1,0 +1,184 @@
+---
+title: show
+description: Dig into findings by file, directory, detector, or pattern
+---
+
+The `show` command displays detailed information about findings in your codebase. You can filter by file path, directory, detector name, finding ID, or custom patterns.
+
+## Usage
+
+```bash
+desloppify show [PATTERN] [OPTIONS]
+```
+
+## Arguments
+
+### `PATTERN` (optional)
+
+The pattern to filter findings. Can be:
+- File path: `src/components/Modal.tsx`
+- Directory: `src/components/`
+- Detector name: `unused`, `smells`, `security`
+- Finding ID: Full or partial ID
+- Glob pattern: `src/**/*.test.ts`
+- Special views: `concerns`, `subjective`, `subjective_review`
+
+If omitted, shows all findings.
+
+## Options
+
+### `--status`
+
+Filter findings by status.
+
+**Choices:** `open`, `fixed`, `wontfix`, `false_positive`, `auto_resolved`, `all`
+
+**Default:** `open`
+
+```bash
+desloppify show --status all
+desloppify show unused --status fixed
+```
+
+### `--top`
+
+Maximum number of files to display.
+
+**Default:** `20`
+
+```bash
+desloppify show src/ --top 50
+```
+
+### `--code`
+
+Show inline code snippets for each finding.
+
+```bash
+desloppify show security --code
+```
+
+### `--chronic`
+
+Show only findings that have been reopened 2+ times (chronic reopeners).
+
+```bash
+desloppify show --chronic
+```
+
+### `--output FILE`
+
+Write results as JSON to a file instead of terminal output.
+
+```bash
+desloppify show unused --output findings.json
+```
+
+### `--state FILE`
+
+Path to custom state file.
+
+```bash
+desloppify show --state .desloppify/custom-state.json
+```
+
+### `--notes FILE`
+
+Path to investigation notes file to attach to a finding.
+
+```bash
+desloppify show --notes investigation.md
+```
+
+## Examples
+
+### Show findings for a specific file
+
+```bash
+desloppify show src/components/Modal.tsx
+```
+
+### Show all unused code findings
+
+```bash
+desloppify show unused
+```
+
+### Show top 50 findings for a detector
+
+```bash
+desloppify show unused --top 50
+```
+
+### Show all findings including fixed ones
+
+```bash
+desloppify show --status all
+```
+
+### Show chronic reopeners with code snippets
+
+```bash
+desloppify show --chronic --code
+```
+
+### Show design concerns
+
+```bash
+desloppify show concerns
+```
+
+### Show subjective review findings
+
+```bash
+desloppify show subjective
+desloppify show review --status open
+```
+
+## Output
+
+The command displays:
+- **File path** with finding counts
+- **Detector name** and finding summaries
+- **Line numbers** where issues occur
+- **Code snippets** (with `--code` flag)
+- **Hidden findings** (noise-filtered items)
+- **Score impact** information
+
+### Special Views
+
+#### Concerns
+
+Shows design concerns detected from mechanical signals:
+
+```bash
+desloppify show concerns
+```
+
+#### Subjective Dimensions
+
+For subjective dimensions, shows:
+- Health and strict scores
+- Open review findings count
+- Guidance on running reviews
+
+```bash
+desloppify show subjective
+```
+
+#### Mechanical Dimensions
+
+For mechanical dimensions (like code smells), shows:
+- Associated detectors
+- All findings grouped by the dimension
+- Dimension health score
+
+## Noise Budget
+
+The `show` command respects noise budgets defined in your configuration. High-noise findings may be hidden from the default view but counted in totals.
+
+## Related Commands
+
+- [`detect`](/commands/detect) - Run a single detector directly
+- [`status`](/commands/status) - View overall score dashboard
+- [`next`](/commands/next) - Show next priority item to fix

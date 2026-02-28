@@ -1,0 +1,274 @@
+---
+title: 'desloppify status'
+description: 'Score dashboard with per-tier progress and dimension health'
+icon: 'chart-line'
+---
+
+## Overview
+
+The `status` command displays a comprehensive score dashboard showing your codebase health. It includes overall scores, dimension breakdowns, tier progress, and actionable insights.
+
+## Basic Usage
+
+```bash
+desloppify status
+```
+
+Displays the full status dashboard in terminal format.
+
+## Command Options
+
+<ParamField path="--state" type="string">
+  Path to state file. Default: `.desloppify/state.json`
+</ParamField>
+
+<ParamField path="--json" type="boolean">
+  Output status data as JSON instead of formatted terminal output. Useful for programmatic consumption.
+</ParamField>
+
+<ParamField path="--lang" type="string">
+  Language context for narrative generation. Auto-detected if omitted.
+</ParamField>
+
+## Output Sections
+
+The status command displays multiple sections:
+
+### 1. Score Summary
+
+Shows four key scores:
+
+- **Overall Score** - Weighted score across all dimensions
+- **Objective Score** - Score from objective detectors only
+- **Strict Score** - Conservative score (excludes unverified subjective)
+- **Verified Strict Score** - Only trusted LLM-verified assessments
+
+### 2. Scan Metrics
+
+- Total files scanned
+- Lines of code analyzed
+- Scan completeness percentage
+- Last scan timestamp
+
+### 3. Open Scope Breakdown
+
+Findings grouped by:
+- File path
+- Detector type
+- Severity tier
+
+### 4. Dimension Table
+
+Detailed breakdown of health dimensions:
+- Code Quality
+- Security
+- Dead Code
+- Duplication
+- Complexity
+- Test Coverage (if applicable)
+- Subjective measures
+
+Each dimension shows:
+- Current score
+- Number of issues
+- Trend (improving/declining)
+
+### 5. Tier Progress
+
+Issues organized by priority tier:
+
+- **T1 (Critical)** - Security issues, data loss risks
+- **T2 (Important)** - Bugs, correctness, major smells
+- **T3 (Moderate)** - Code quality, duplication, dead code
+- **T4 (Cosmetic)** - Style, subjective review dimensions
+
+### 6. Focus Suggestions
+
+AI-powered suggestions on which dimension to tackle next based on:
+- Score gaps from target
+- Issue density
+- Impact on overall score
+
+### 7. Subjective Follow-up
+
+Recommendations for subjective dimensions that:
+- Haven't been assessed yet (placeholder scores)
+- Are below target threshold
+- Need review refresh
+
+### 8. Review Summary
+
+Status of subjective review assessments:
+- Number of dimensions assessed
+- Assessment age
+- Staleness warnings
+
+### 9. Structural Areas
+
+High-level codebase structure insights:
+- Module boundaries
+- Dependency patterns
+- Architectural concerns
+
+### 10. Agent Plan
+
+If a living plan is active:
+- Active cluster focus
+- Queue prioritization
+- Custom ordering
+
+### 11. Narrative Headline
+
+AI-generated one-line summary of current codebase state and recommended next action.
+
+## Example Output
+
+```bash
+$ desloppify status
+
+  Overall Score:       87.5
+  Objective Score:     85.2
+  Strict Score:        85.2
+  Verified Score:      82.1
+  Target:              95.0 (gap: 9.8)
+
+  Scan Metrics:
+    Files:      1,234
+    LOC:        45,678
+    Complete:   100%
+    Last scan:  2 hours ago
+
+  Open Scope:
+    src/         42 findings
+    tests/        8 findings
+    Total:       50 findings
+
+  Dimensions:
+    Code Quality          90.2  (12 issues)
+    Security              95.0  (3 issues)
+    Dead Code             78.3  (18 issues)
+    Duplication           88.5  (8 issues)
+    Complexity            85.0  (9 issues)
+    
+    Subjective:
+    API Design            92.0  (assessed 3 days ago)
+    Error Handling        [pending]
+
+  Tier Progress:
+    T1 Critical:      3 / 3    (0 open)
+    T2 Important:    15 / 20   (5 open)
+    T3 Moderate:     25 / 50   (25 open)
+    T4 Cosmetic:     10 / 30   (20 open)
+
+  Focus Suggestion:
+    → Tackle Dead Code (18 issues, biggest gap from target)
+
+  Review Summary:
+    5 / 8 dimensions assessed
+    Oldest assessment: 7 days ago
+    ⚠️  Consider running review refresh
+
+  → Next: Run `desloppify next --tier 2` to see important issues
+```
+
+## JSON Output
+
+When using `--json`, the output includes:
+
+```json
+{
+  "overall_score": 87.5,
+  "objective_score": 85.2,
+  "strict_score": 85.2,
+  "verified_strict_score": 82.1,
+  "dimension_scores": {
+    "code_quality": 90.2,
+    "security": 95.0,
+    "dead_code": 78.3
+  },
+  "score_breakdown": {
+    "excellent": 2,
+    "good": 3,
+    "needs_work": 1
+  },
+  "scorecard_dimensions": [...],
+  "subjective_measures": [...],
+  "potentials": {...},
+  "codebase_metrics": {...},
+  "stats": {...},
+  "open_scope": {...},
+  "suppression": {...},
+  "scan_count": 42,
+  "last_scan": "2026-02-28T10:30:00Z"
+}
+```
+
+## Use Cases
+
+### Daily Health Check
+
+```bash
+desloppify status
+```
+
+### CI Status Gate
+
+```bash
+# Fail CI if score below threshold
+desloppify status --json | jq -e '.strict_score >= 95'
+```
+
+### Monitoring Integration
+
+```bash
+# Export metrics to monitoring system
+desloppify status --json > /metrics/desloppify.json
+```
+
+### Status Badge
+
+Combine with scan's badge generation:
+
+```bash
+desloppify scan --badge-path docs/scorecard.png
+```
+
+## Status Indicators
+
+The status command shows various warnings:
+
+- **⚠️ Stale scan** - Last scan over 24 hours ago
+- **⚠️ Config staleness** - Config changed, rescan recommended
+- **⚠️ Tool staleness** - Desloppify version mismatch
+- **⚠️ Skill version** - Agent skill document needs update
+- **⚠️ Review staleness** - Subjective assessments are old
+
+## Configuration
+
+The status display respects configuration:
+
+```json
+{
+  "target_strict_score": 95.0,
+  "review_max_age_days": 30,
+  "ignore": ["test::*", "vendor::*"]
+}
+```
+
+- `target_strict_score` - Goal score (default: 95.0)
+- `review_max_age_days` - Max age before review is stale (default: 30)
+- `ignore` - Patterns excluded from scoring
+
+## Related Commands
+
+- [`scan`](/commands/scan) - Run analysis to update scores
+- [`next`](/commands/next) - See what to work on next
+- [`show`](/commands/show) - Investigate specific findings
+- [`plan`](/commands/plan) - View/manage prioritized work plan
+
+## See Also
+
+- [Scoring System](/concepts/scoring)
+- [Dimensions](/concepts/dimensions)
+- [Tiers](/concepts/tiers)
+- [Living Plan](/concepts/living-plan)

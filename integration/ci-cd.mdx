@@ -1,0 +1,642 @@
+---
+title: "CI/CD Integration"
+description: "Integrate Desloppify into your CI/CD pipeline to enforce code quality gates"
+icon: "github"
+---
+
+## Overview
+
+Desloppify can run in your CI/CD pipeline to enforce code quality standards. You can:
+
+- **Block PRs** if quality score drops below a threshold
+- **Generate scorecards** as build artifacts
+- **Track quality trends** over time
+- **Fail builds** on new high-tier issues
+
+<Note>
+  Desloppify is designed to work well in CI — it's fast, deterministic, and state-aware.
+</Note>
+
+## GitHub Actions
+
+Here's a complete GitHub Actions workflow that runs Desloppify on every PR:
+
+### Basic Quality Check
+
+```yaml .github/workflows/desloppify.yml
+name: Code Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Desloppify
+        run: |
+          pip install --upgrade "desloppify[full]"
+      
+      - name: Run Desloppify scan
+        run: |
+          desloppify scan --path src/
+      
+      - name: Check quality score
+        run: |
+          desloppify status
+      
+      - name: Upload scorecard
+        uses: actions/upload-artifact@v4
+        with:
+          name: desloppify-scorecard
+          path: scorecard.png
+```
+
+### Enforce Quality Gate
+
+Fail the build if the strict score is below target:
+
+<CodeGroup>
+```yaml Strict score gate
+name: Code Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Desloppify
+        run: |
+          pip install --upgrade "desloppify[full]"
+      
+      - name: Scan and enforce quality gate
+        run: |
+          desloppify scan --path src/
+          
+          # Get strict score
+          SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+          TARGET=$(desloppify config show | grep target_strict_score | awk '{print $2}')
+          
+          echo "Strict score: $SCORE"
+          echo "Target: $TARGET"
+          
+          # Fail if below target
+          if (( $(echo "$SCORE < $TARGET" | bc -l) )); then
+            echo "❌ Quality gate failed: score $SCORE is below target $TARGET"
+            exit 1
+          fi
+          
+          echo "✅ Quality gate passed"
+```
+
+```yaml Block new T4 issues
+name: Block Critical Issues
+
+on:
+  pull_request:
+
+jobs:
+  block-critical:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Desloppify
+        run: |
+          pip install --upgrade "desloppify[full]"
+      
+      - name: Check for new T4 issues
+        run: |
+          desloppify scan --path src/
+          
+          # Count open T4 issues
+          T4_COUNT=$(desloppify show --tier 4 --status open | grep -c "^" || true)
+          
+          if [ "$T4_COUNT" -gt 0 ]; then
+            echo "❌ Found $T4_COUNT critical (T4) issues:"
+            desloppify show --tier 4 --status open
+            exit 1
+          fi
+          
+          echo "✅ No critical issues found"
+```
+</CodeGroup>
+
+### Full CI Workflow with Artifacts
+
+A complete workflow with caching, artifacts, and PR comments:
+
+```yaml .github/workflows/desloppify-full.yml
+name: Desloppify Full Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade "desloppify[full]"
+      
+      - name: Cache Desloppify state
+        uses: actions/cache@v4
+        with:
+          path: .desloppify/
+          key: desloppify-${{ github.sha }}
+          restore-keys: |
+            desloppify-${{ github.base_ref }}-
+            desloppify-
+      
+      - name: Run Desloppify scan
+        run: |
+          desloppify scan --path src/ --badge-path scorecard.png
+      
+      - name: Generate report
+        run: |
+          echo "# Desloppify Quality Report" > report.md
+          echo "" >> report.md
+          desloppify status >> report.md
+          echo "" >> report.md
+          echo "## Top Priority Issues" >> report.md
+          desloppify next --count 10 >> report.md
+      
+      - name: Upload scorecard
+        uses: actions/upload-artifact@v4
+        with:
+          name: desloppify-scorecard
+          path: scorecard.png
+          retention-days: 30
+      
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: desloppify-report
+          path: report.md
+          retention-days: 30
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+```
+
+## GitLab CI
+
+Here's a GitLab CI configuration:
+
+<CodeGroup>
+```yaml Basic check
+desloppify:quality:
+  image: python:3.11
+  
+  before_script:
+    - pip install --upgrade "desloppify[full]"
+  
+  script:
+    - desloppify scan --path src/
+    - desloppify status
+  
+  artifacts:
+    paths:
+      - scorecard.png
+    expire_in: 1 week
+  
+  only:
+    - merge_requests
+    - main
+```
+
+```yaml With quality gate
+desloppify:gate:
+  image: python:3.11
+  
+  before_script:
+    - pip install --upgrade "desloppify[full]" bc
+  
+  script:
+    - desloppify scan --path src/
+    - |
+      SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+      TARGET=$(desloppify config show | grep target_strict_score | awk '{print $2}')
+      
+      echo "Strict score: $SCORE"
+      echo "Target: $TARGET"
+      
+      if (( $(echo "$SCORE < $TARGET" | bc -l) )); then
+        echo "❌ Quality gate failed"
+        exit 1
+      fi
+      
+      echo "✅ Quality gate passed"
+  
+  artifacts:
+    paths:
+      - scorecard.png
+    reports:
+      dotenv: desloppify.env
+  
+  cache:
+    key: desloppify-$CI_COMMIT_REF_SLUG
+    paths:
+      - .desloppify/
+  
+  only:
+    - merge_requests
+    - main
+```
+</CodeGroup>
+
+## CircleCI
+
+```yaml .circleci/config.yml
+version: 2.1
+
+jobs:
+  desloppify-check:
+    docker:
+      - image: cimg/python:3.11
+    
+    steps:
+      - checkout
+      
+      - restore_cache:
+          keys:
+            - desloppify-{{ .Branch }}
+            - desloppify-
+      
+      - run:
+          name: Install Desloppify
+          command: pip install --upgrade "desloppify[full]"
+      
+      - run:
+          name: Run scan
+          command: |
+            desloppify scan --path src/
+            desloppify status
+      
+      - run:
+          name: Check quality gate
+          command: |
+            SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+            TARGET=$(desloppify config show | grep target_strict_score | awk '{print $2}')
+            
+            if (( $(echo "$SCORE < $TARGET" | bc -l) )); then
+              echo "Quality gate failed: $SCORE < $TARGET"
+              exit 1
+            fi
+      
+      - save_cache:
+          key: desloppify-{{ .Branch }}
+          paths:
+            - .desloppify/
+      
+      - store_artifacts:
+          path: scorecard.png
+          destination: desloppify-scorecard.png
+
+workflows:
+  quality-check:
+    jobs:
+      - desloppify-check:
+          filters:
+            branches:
+              only:
+                - main
+                - /^feature\/.*/
+```
+
+## Jenkins
+
+```groovy Jenkinsfile
+pipeline {
+    agent any
+    
+    environment {
+        DESLOPPIFY_ROOT = "${WORKSPACE}"
+    }
+    
+    stages {
+        stage('Setup') {
+            steps {
+                sh 'pip install --upgrade "desloppify[full]"'
+            }
+        }
+        
+        stage('Quality Scan') {
+            steps {
+                sh 'desloppify scan --path src/'
+                sh 'desloppify status'
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                script {
+                    def score = sh(
+                        script: 'desloppify status | grep "Strict score:" | awk \'{print $3}\'',
+                        returnStdout: true
+                    ).trim().toFloat()
+                    
+                    def target = sh(
+                        script: 'desloppify config show | grep target_strict_score | awk \'{print $2}\'',
+                        returnStdout: true
+                    ).trim().toFloat()
+                    
+                    echo "Strict score: ${score}"
+                    echo "Target: ${target}"
+                    
+                    if (score < target) {
+                        error("Quality gate failed: ${score} < ${target}")
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            archiveArtifacts artifacts: 'scorecard.png', fingerprint: true
+        }
+    }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Cache the .desloppify directory">
+    Desloppify maintains state in `.desloppify/`. Cache this directory between builds to:
+    
+    - Preserve issue history
+    - Track what's been resolved
+    - Speed up scans
+    
+    Use your CI platform's caching mechanism to persist this directory.
+  </Accordion>
+  
+  <Accordion title="Set a realistic target score">
+    Don't start with a 95 target on a legacy codebase. Instead:
+    
+    1. Run a baseline scan
+    2. Set target to current score (e.g., 72)
+    3. Gradually increase over time
+    
+    ```bash
+    desloppify config set target_strict_score 72
+    ```
+  </Accordion>
+  
+  <Accordion title="Use --exclude for non-production code">
+    Exclude test fixtures, migrations, generated code:
+    
+    ```bash
+    desloppify scan --path . --exclude migrations --exclude tests/fixtures --exclude generated
+    ```
+    
+    Or set zones:
+    
+    ```bash
+    desloppify zone set tests/ test
+    desloppify zone set migrations/ generated
+    ```
+  </Accordion>
+  
+  <Accordion title="Generate and publish scorecards">
+    The scorecard badge is a great way to showcase code quality:
+    
+    ```yaml
+    - name: Upload scorecard to PR
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: scorecard
+        path: scorecard.png
+    ```
+    
+    Or commit it to your repo:
+    
+    ```yaml
+    - name: Commit scorecard
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add scorecard.png
+        git commit -m "Update quality scorecard" || true
+        git push
+    ```
+  </Accordion>
+  
+  <Accordion title="Run subjective reviews periodically">
+    Subjective reviews are expensive. Don't run them on every PR.
+    
+    Instead, run them:
+    - Nightly on main
+    - Before releases
+    - When manually triggered
+    
+    ```yaml
+    on:
+      schedule:
+        - cron: '0 2 * * *'  # 2 AM daily
+      workflow_dispatch:   # Manual trigger
+    ```
+  </Accordion>
+  
+  <Accordion title="Block only regressions, not existing debt">
+    Don't fail builds for existing issues — only for new ones or score drops.
+    
+    Track baseline score and fail if it drops:
+    
+    ```bash
+    # Save baseline
+    BASELINE=$(cat .desloppify/baseline_score.txt)
+    
+    # Get current
+    CURRENT=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+    
+    # Fail if score dropped
+    if (( $(echo "$CURRENT < $BASELINE" | bc -l) )); then
+      echo "Score dropped: $CURRENT < $BASELINE"
+      exit 1
+    fi
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CI-Specific Configuration
+
+### Environment Variables
+
+You can configure Desloppify via environment variables in CI:
+
+```yaml
+env:
+  DESLOPPIFY_ROOT: ${{ github.workspace }}
+  DESLOPPIFY_SRC: src
+  DESLOPPIFY_NO_BADGE: false
+  DESLOPPIFY_BADGE_PATH: assets/scorecard.png
+```
+
+### Detecting CI Environment
+
+Desloppify automatically detects CI environments and adjusts behavior:
+
+- Disables interactive prompts
+- Uses simpler output formatting
+- Skips badge generation if `DESLOPPIFY_NO_BADGE=true`
+
+### Language-Specific Setup
+
+<Tabs>
+  <Tab title="TypeScript/JavaScript">
+    ```yaml
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run Desloppify
+      run: |
+        pip install --upgrade "desloppify[full]"
+        desloppify scan --path . --lang typescript
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```yaml
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+    
+    - name: Run Desloppify
+      run: |
+        pip install --upgrade "desloppify[full]"
+        desloppify scan --path . --lang python
+    ```
+  </Tab>
+  
+  <Tab title="C#/.NET">
+    ```yaml
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Run Desloppify
+      run: |
+        pip install --upgrade "desloppify[full]"
+        desloppify scan --path . --lang csharp
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build failing on first run">
+    On first run, Desloppify may find many issues. Don't fail the build immediately.
+    
+    Instead:
+    1. Run scan locally
+    2. Set baseline target to current score
+    3. Commit `.desloppify/config.json`
+    4. Enable CI gate
+  </Accordion>
+  
+  <Accordion title="State not persisting between builds">
+    Make sure you're caching the `.desloppify/` directory:
+    
+    ```yaml
+    - uses: actions/cache@v4
+      with:
+        path: .desloppify/
+        key: desloppify-${{ github.sha }}
+        restore-keys: desloppify-
+    ```
+  </Accordion>
+  
+  <Accordion title="Scorecard not generating">
+    Check that:
+    1. `DESLOPPIFY_NO_BADGE` is not set to `true`
+    2. The output path is writable
+    3. Required dependencies are installed (`pip install "desloppify[full]"`)
+    
+    You can also disable badge generation:
+    
+    ```bash
+    desloppify scan --no-badge
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AI Coding Agents" icon="robot" href="/integration/agents">
+    Use Desloppify with AI agents to systematically improve quality
+  </Card>
+  
+  <Card title="Workflows" icon="diagram-project" href="/integration/workflows">
+    Example workflows for different scenarios
+  </Card>
+</CardGroup>

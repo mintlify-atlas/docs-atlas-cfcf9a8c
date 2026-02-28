@@ -1,0 +1,232 @@
+---
+title: 'Subjective Review System'
+description: 'How Desloppify uses LLMs to evaluate code quality beyond mechanical detection'
+---
+
+## Overview
+
+Desloppify's subjective review system bridges the gap between mechanical detection (unused imports, complexity) and the kind of quality assessment that traditionally required a senior engineer's attention. It uses LLMs to evaluate abstractions, naming, module boundaries, and other aspects of code quality that resist automation.
+
+**Key principle**: No LLM calls happen in the core Desloppify Python codebase. The system prepares structured review packets, and agents (Codex, Claude, etc.) process them externally, then return structured findings that import back into state like any other detector.
+
+## How It Works
+
+### 1. Preparation Phase
+
+When you run `desloppify review --prepare`, the system:
+
+- Selects files for review (excludes low-value files, respects zone rules)
+- Builds structured context (codebase patterns, mechanical evidence, dependencies)
+- Generates investigation batches (independent groups of related files)
+- Creates a review packet (`query.json`) with prompts and metadata
+
+```bash
+desloppify review --prepare --path src/
+```
+
+The packet includes:
+- **Dimensions**: Specific aspects to evaluate (naming, abstractions, boundaries, etc.)
+- **Context signals**: Mechanical findings, dependency graph, structural patterns
+- **File batches**: Grouped by concern ("Framework core", "Business logic", etc.)
+- **System prompt**: Schema + scoring guidelines + anti-gaming rules
+
+<Note>
+The preparation step is **deterministic** — same codebase produces same packet. This supports reproducible reviews and prevents prompt drift.
+</Note>
+
+### 2. Batch Execution
+
+Investigation batches run independently and can execute in parallel:
+
+```bash
+desloppify review --run-batches --runner codex --parallel --scan-after-import
+```
+
+**Runner options**:
+- `codex`: Local OpenCode agent (recommended for automation)
+- External runners: Claude, cursor, gemini (via `--external-start`)
+
+**Each batch receives**:
+- Blind packet (target score removed to prevent anchoring)
+- Files to read and analyze
+- Dimensional prompts (what to look for)
+- Contextual clues (mechanical issues, import patterns)
+
+**Batch isolation**: Batches don't see each other's outputs until merge. This prevents cascade errors and supports parallel execution.
+
+<CodeGroup>
+```bash Sequential execution
+desloppify review --run-batches --runner codex
+```
+
+```bash Parallel execution (3 workers)
+desloppify review --run-batches --runner codex --parallel --max-parallel-batches 3
+```
+</CodeGroup>
+
+### 3. Merge and Import
+
+After batch execution completes:
+
+1. **Merge**: Combine batch outputs, deduplicate findings, aggregate assessments
+2. **Validate**: Check schema compliance, dimension coverage, score-feedback consistency
+3. **Import**: Transactional state update with guardrails (see [Subjective Scoring](/advanced/subjective-scoring))
+
+The merge process includes quality metrics:
+- **Dimension coverage**: % of target dimensions assessed
+- **Evidence density**: Average evidence items per finding
+- **Finding pressure**: Issues per dimension (detects review fatigue)
+
+## Review Dimensions
+
+Dimensions are scored aspects of code quality. Each dimension gets:
+- A 0-100 score
+- Optional findings (specific issues)
+- Evidence notes (what the reviewer observed)
+- Confidence level (high/medium/low)
+
+<Tabs>
+  <Tab title="TypeScript">
+    **Default dimensions**:
+    - Naming: clarity, consistency, intent revelation
+    - Abstractions: appropriate level, cohesion, coupling
+    - Boundaries: module organization, layer separation
+    - Error handling: coverage, consistency, user experience
+    - Testability: dependency injection, side-effect isolation
+    - Patterns: idiom adherence, framework conventions
+  </Tab>
+  <Tab title="Python">
+    **Default dimensions**:
+    - Naming: PEP 8 adherence, clarity, consistency
+    - Abstractions: class design, function decomposition
+    - Boundaries: package structure, import discipline
+    - Error handling: exception hierarchy, context managers
+    - Pythonic idioms: generator use, context protocols
+    - Type safety: type hints, mypy compatibility
+  </Tab>
+  <Tab title="Generic Plugins">
+    Generic languages get universal dimensions:
+    - Naming
+    - Abstractions
+    - Boundaries
+    - Error handling
+
+    Plus language-specific guidance from review data files.
+  </Tab>
+</Tabs>
+
+Custom dimensions can be added via CLI:
+
+```bash
+desloppify review --prepare --dimensions naming,abstractions,security
+```
+
+## Context Signals
+
+The review packet includes mechanical evidence to ground subjective assessment:
+
+- **Structural signals**: File size, complexity, function count, parameter count
+- **Coupling signals**: Import fan-in/fan-out, dependency depth, cycle membership
+- **Smell signals**: Long functions, god classes, duplicate patterns
+- **Historical context**: Past review findings, resolution notes (with `--retrospective`)
+
+**Example context injection**:
+
+```json
+{
+  "file": "src/components/DataTable.tsx",
+  "mechanical_signals": {
+    "complexity": 42,
+    "lines": 856,
+    "props_count": 23,
+    "duplicates": ["Pagination logic repeated in ListView.tsx"]
+  },
+  "review_focus": "Component has high complexity and many props — evaluate abstraction quality"
+}
+```
+
+This prevents "looks fine to me" reviews on files with 15 mechanical issues.
+
+## Blind Review Protocol
+
+To prevent **anchoring bias**, batch runners receive a "blind packet" with:
+- ✅ File contents and context signals
+- ✅ Dimensional prompts and guidelines
+- ❌ Current scores removed
+- ❌ Target score hidden
+- ❌ Previous assessment values stripped
+
+This forces the reviewer to evaluate the code as-is, not relative to a goal.
+
+<Warning>
+Manual override mode (`--manual-override`) skips blind review and marks assessments as **provisional**. These expire on the next scan unless replaced by a trusted review.
+</Warning>
+
+## Retrospective Mode
+
+Add historical issue context to guide reviewers toward root causes:
+
+```bash
+desloppify review --prepare --retrospective --retrospective-max-issues 30
+```
+
+Retro context includes:
+- Past findings (status, resolution notes, timestamps)
+- Issue clusters (repeated patterns)
+- Dimension trends (improving vs. declining)
+
+This helps distinguish **symptom-level fixes** ("renamed this variable") from **structural improvements** ("refactored error handling boundary").
+
+## Anti-Gaming Measures
+
+The review system resists score inflation through:
+
+1. **Consistency enforcement**: Scores < 100 require feedback evidence
+2. **Issue pressure**: Scores < 85 require at least one finding in that dimension
+3. **Fail-closed validation**: Invalid findings abort import (unless `--allow-partial`)
+4. **Blind review**: Runners don't see target scores or current assessments
+5. **Provenance tracking**: Every assessment carries timestamp, source, and session metadata
+
+See [Import Guardrails](/advanced/subjective-scoring#import-guardrails) for validation rules.
+
+## Workflow Integration
+
+**Typical agent flow**:
+
+1. Agent runs scan, sees low subjective scores
+2. Agent runs `review --prepare`, reads workflow instructions
+3. Agent runs `review --run-batches --runner codex --parallel --scan-after-import`
+4. System executes batches, merges results, imports findings, re-scans
+5. Agent runs `next`, sees highest-priority subjective finding
+6. Agent fixes the issue, runs `resolve`, repeats
+
+**Manual fallback** (when local runner unavailable):
+
+```bash
+# Prepare packet
+desloppify review --prepare
+
+# Run external reviewer manually, save output to findings.json
+
+# Import results
+desloppify review --import findings.json
+```
+
+## Code References
+
+- Review preparation: `desloppify/intelligence/review/prepare.py`
+- Batch execution: `desloppify/app/commands/review/batches.py:299`
+- Import validation: `desloppify/app/commands/review/import_cmd.py:132`
+- Context building: `desloppify/intelligence/review/context_holistic.py`
+- Dimension definitions: `desloppify/intelligence/review/dimensions/`
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="Subjective Scoring" icon="chart-line" href="/advanced/subjective-scoring">
+    Import guardrails, consistency rules, and score validation
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    How review integrates with the detector pipeline
+  </Card>
+</CardGroup>

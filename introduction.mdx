@@ -1,0 +1,67 @@
+---
+title: Introduction
+description: A multi-language codebase quality scanner and technical debt tracker that helps AI agents systematically improve code quality
+---
+
+# Welcome to Desloppify
+
+Desloppify gives your AI coding agent the tools to identify, understand, and systematically improve codebase quality. It combines mechanical detection (dead code, duplication, complexity) with subjective LLM review (naming, abstractions, module boundaries), then works through a prioritized fix loop.
+
+## What makes Desloppify different
+
+The score gives your agent a north-star, and the tooling helps it plan, execute, and resolve issues until it hits your target — with a lot of tricks to keep it on track. A score above 98 should correlate with a codebase a seasoned engineer would call beautiful.
+
+<CardGroup cols={2}>
+  <Card title="Multi-language support" icon="code">
+    Currently supports 28 languages with full plugin depth for TypeScript, Python, C#, Dart, GDScript, and Go
+  </Card>
+  <Card title="Anti-gaming scoring" icon="shield-check">
+    Scoring designed to resist gaming — the only way to improve it is to actually make the code better
+  </Card>
+  <Card title="Persistent state" icon="database">
+    State persists across scans so you can chip away over multiple sessions
+  </Card>
+  <Card title="AI-first workflow" icon="robot">
+    Built specifically for AI agents with automatic prioritization and resolution tracking
+  </Card>
+</CardGroup>
+
+## From vibe coding to vibe engineering
+
+Vibe coding gets things built fast. But the codebases it produces tend to rot in ways that are hard to see and harder to fix — not just the mechanical stuff like dead imports, but the structural kind. Abstractions that made sense at first stop making sense. Naming drifts. Error handling is done three different ways.
+
+LLMs are actually good at spotting this now, if you ask them the right questions. That's the core bet here — that an agent with the right framework can hold a codebase to a real standard, the kind that used to require a senior engineer paying close attention over months.
+
+## Quality scorecard
+
+Desloppify generates a quality score that your agent can optimize toward. The score generates a scorecard badge for your GitHub profile or README:
+
+<img src="/images/scorecard.png" alt="Desloppify scorecard badge" />
+
+## Detection categories
+
+Desloppify finds issues across multiple tiers:
+
+| Tier | Fix type | Examples |
+|------|----------|----------|
+| T1 | Auto-fixable | Unused imports, debug logs |
+| T2 | Quick manual | Unused variables, dead exports |
+| T3 | Needs judgment | Near-duplicates, single-use abstractions |
+| T4 | Major refactor | God components, mixed concerns |
+
+The score is weighted so T4 issues (major refactors) count 4x more than T1 issues (auto-fixes).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get Desloppify installed on your system
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Run your first codebase scan in minutes
+  </Card>
+</CardGroup>
+
+<Note>
+  Want to join a community of vibe engineers who want to build beautiful things? [Join the Discord](https://discord.gg/aZdzbZrHaY)
+</Note>

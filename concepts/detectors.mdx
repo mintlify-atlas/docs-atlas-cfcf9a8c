@@ -1,0 +1,305 @@
+---
+title: "Detectors"
+description: "Mechanical vs subjective detection and how they work together"
+icon: "radar"
+---
+
+## Overview
+
+Desloppify uses two complementary detection systems:
+
+<CardGroup cols={2}>
+  <Card title="Mechanical Detectors" icon="gears">
+    Deterministic analysis of code structure, complexity, duplication, and patterns. Fast, consistent, language-specific.
+  </Card>
+  <Card title="Subjective Detectors" icon="brain">
+    LLM-based review of abstractions, naming, elegance, and architectural coherence. Slow, contextual, holistic.
+  </Card>
+</CardGroup>
+
+The combination ensures both **objective quality baselines** (mechanical) and **craftsmanship assessment** (subjective).
+
+## Mechanical Detectors
+
+Mechanical detectors analyze code using AST parsing, static analysis, and pattern matching.
+
+### Detection Categories
+
+<Tabs>
+  <Tab title="File Health">
+    **Structural integrity and organization**
+    
+    Detectors:
+    - `structural` - Malformed or problematic file structures
+    - `orphaned` - Files with no imports/exports
+    - `flat_dirs` - Directories that should be hierarchical
+  </Tab>
+  
+  <Tab title="Code Quality">
+    **Day-to-day code hygiene**
+    
+    Detectors:
+    - `unused` - Unused imports, variables, parameters
+    - `logs` - Debug console.log/print statements
+    - `exports` - Unused or dead exports
+    - `deprecated` - Usage of deprecated APIs
+    - `props` - Unused React props or function parameters
+    - `smells` - Code smell patterns
+    - `naming` - Naming convention violations
+    - `patterns` - Anti-pattern detection
+    - `coupling` - High coupling between modules
+  </Tab>
+  
+  <Tab title="Complexity">
+    **Size and complexity metrics**
+    
+    Detectors:
+    - `large` - Files exceeding LOC thresholds
+    - `complexity` - High complexity scores from configurable signals
+    - `gods` - God classes/components with too many responsibilities
+    - `single_use` - Over-abstracted single-use functions
+  </Tab>
+  
+  <Tab title="Duplication">
+    **Code reuse and DRY violations**
+    
+    Detectors:
+    - `dupes` - Exact and near-duplicate functions
+    - `boilerplate_duplication` - Repeated boilerplate patterns
+  </Tab>
+  
+  <Tab title="Security & Architecture">
+    **Security issues and architectural violations**
+    
+    Detectors:
+    - `security` - Security vulnerabilities and unsafe patterns
+    - `cycles` - Circular dependencies
+    - `deps` - Dependency violations
+    - `layer_violation` - Architectural layer boundary violations
+    - `private_imports` - Imports from private/internal modules
+  </Tab>
+</Tabs>
+
+### Example: Complexity Detector
+
+The complexity detector uses **configurable signals** to score files:
+
+```python
+# From desloppify/engine/detectors/complexity.py
+def detect_complexity(
+    path: Path, signals, file_finder, threshold: int = 15, min_loc: int = 50
+) -> tuple[list[dict], int]:
+    """Detect files with complexity signals."""
+    for filepath in files:
+        content = p.read_text()
+        lines = content.splitlines()
+        loc = len(lines)
+        
+        file_signals = []
+        score = 0
+        
+        for sig in signals:
+            if sig.compute:
+                # Custom compute function (e.g., cyclomatic complexity)
+                result = sig.compute(content, lines)
+                if result:
+                    count, label = result
+                    excess = max(0, count - sig.threshold)
+                    score += excess * sig.weight
+            elif sig.pattern:
+                # Regex pattern matching
+                count = len(re.findall(sig.pattern, content, re.MULTILINE))
+                if count > sig.threshold:
+                    score += (count - sig.threshold) * sig.weight
+        
+        if score >= threshold:
+            entries.append({"file": filepath, "score": score, "signals": file_signals})
+```
+
+**Complexity signals** are language-specific. Example signals:
+- Nested conditionals (pattern: `if.*if`)
+- Try/catch blocks
+- Cyclomatic complexity (computed)
+- Lambda/arrow functions
+
+### Example: Duplication Detector
+
+The duplication detector finds exact and near-duplicate functions:
+
+```python
+# From desloppify/engine/detectors/dupes.py
+def detect_duplicates(functions, threshold: float = 0.9) -> tuple[list[dict], int]:
+    """Find duplicate/near-duplicate functions, clustered by similarity."""
+    
+    # Step 1: Find exact duplicates by body hash
+    by_hash: dict[str, list[int]] = {}
+    for idx, fn in enumerate(functions):
+        by_hash.setdefault(fn.body_hash, []).append(idx)
+    
+    # Step 2: Find near-duplicates using SequenceMatcher
+    for i in range(len(large_functions)):
+        for j in range(i + 1, len(large_functions)):
+            matcher = difflib.SequenceMatcher(None, fn_a.normalized, fn_b.normalized)
+            ratio = matcher.ratio()
+            if ratio >= threshold:
+                pairs.append((i, j, ratio, "near-duplicate"))
+    
+    # Step 3: Cluster similar functions
+    clusters = _build_clusters(pairs, len(functions))
+    
+    # Output: One entry per cluster (not N² pairwise entries)
+    return entries, len(functions)
+```
+
+**Key features**:
+- Uses normalized function bodies (whitespace/comments stripped)
+- Clusters similar functions (union-find algorithm)
+- Optimization: only compares functions within 1.5× LOC of each other
+
+### Example: God Class Detector
+
+Detects classes/components with too many responsibilities:
+
+```python
+# From desloppify/engine/detectors/gods.py
+def detect_gods(classes, rules, min_reasons: int = 2) -> tuple[list[dict], int]:
+    """Find god classes/components."""
+    for cls in classes:
+        reasons = []
+        for rule in rules:
+            value = rule.extract(cls)  # e.g., method count, LOC, hook count
+            if value >= rule.threshold:
+                reasons.append(f"{value} {rule.description}")
+        
+        if len(reasons) >= min_reasons:
+            entries.append({"file": cls.file, "name": cls.name, "reasons": reasons})
+```
+
+**Example rules** (language-specific):
+- Python: `>10 methods`, `>15 attributes`, `>500 LOC`
+- React: `>8 hooks`, `>5 useEffect calls`, `>400 LOC`
+
+## Subjective Detectors
+
+Subjective detection uses LLM review to assess quality dimensions that require human judgment:
+
+### Subjective Dimensions
+
+<CardGroup cols={2}>
+  <Card title="Elegance" icon="gem">
+    - **High Elegance**: Core algorithms, domain models
+    - **Mid Elegance**: Business logic, feature code
+    - **Low Elegance**: Utilities, config, glue code
+  </Card>
+  
+  <Card title="Structure" icon="sitemap">
+    - **Contracts**: API boundaries, interfaces
+    - **Type Safety**: Type annotations, null handling
+    - **Abstraction Fit**: Appropriate abstraction levels
+    - **Structure Nav**: Module organization, discoverability
+  </Card>
+  
+  <Card title="Clarity" icon="lightbulb">
+    - **Logic Clarity**: Readability of complex logic
+    - **Error Consistency**: Consistent error handling
+    - **Naming Quality**: Clear, intention-revealing names
+  </Card>
+  
+  <Card title="Debt" icon="triangle-exclamation">
+    - **Design Coherence**: Architectural consistency
+    - **AI Generated Debt**: Over-abstraction, copy-paste patterns
+  </Card>
+</CardGroup>
+
+### Blind Review Process
+
+Subjective review uses a **blind assessment** approach:
+
+1. **Prepare review packet**: `desloppify review --prepare`
+2. **Run blind review**: LLM reviews code without seeing current scores
+3. **Import findings**: System validates scores match feedback
+4. **Score integration**: Subjective scores blend into overall score (60% weight)
+
+**Anti-gaming validation**:
+```python
+# From desloppify/engine/_scoring/policy/core.py
+SUBJECTIVE_TARGET_MATCH_TOLERANCE = 0.05
+
+# Scores within 0.05 of target require explicit findings
+if abs(score - target) <= 0.05:
+    require_dimension_notes_or_findings()
+```
+
+## Detector Policies
+
+Each detector has a **scoring policy** that defines its dimension, tier, and weighting mode:
+
+```python
+# From desloppify/engine/_scoring/policy/core.py
+@dataclass(frozen=True)
+class DetectorScoringPolicy:
+    detector: str
+    dimension: str | None
+    tier: int | None
+    file_based: bool = False
+    use_loc_weight: bool = False
+    excluded_zones: frozenset[str] = frozenset({"test", "config", "generated", "vendor"})
+
+DETECTOR_SCORING_POLICIES = {
+    "unused": DetectorScoringPolicy("unused", "Code quality", 3),
+    "dupes": DetectorScoringPolicy("dupes", "Duplication", 3),
+    "security": DetectorScoringPolicy(
+        "security", "Security", 4, 
+        file_based=True,
+        excluded_zones=frozenset({"test", "config", "generated", "vendor"})
+    ),
+    "test_coverage": DetectorScoringPolicy(
+        "test_coverage", "Test health", 4,
+        file_based=True,
+        use_loc_weight=True
+    ),
+}
+```
+
+**Policy attributes**:
+- `dimension`: Which quality dimension this contributes to
+- `tier`: T1-T4 fix effort (see [Tiers](/concepts/tiers))
+- `file_based`: Whether potential = file count vs total checks
+- `use_loc_weight`: Use LOC-based weighting instead of confidence
+- `excluded_zones`: Skip findings in test/vendor/generated code
+
+## Language Support
+
+Detector availability varies by language:
+
+<Tabs>
+  <Tab title="TypeScript/React">
+    **Full plugin depth** - 28 detectors
+    
+    `logs`, `unused`, `exports`, `deprecated`, `large`, `complexity`, `gods`, `single_use`, `props`, `passthrough`, `concerns`, `deps`, `dupes`, `smells`, `coupling`, `patterns`, `naming`, `cycles`, `orphaned`, `react`, `test_coverage`, `security`
+  </Tab>
+  
+  <Tab title="Python">
+    **Full plugin depth** - 12 detectors
+    
+    `unused`, `large`, `complexity`, `gods`, `props`, `smells`, `dupes`, `deps`, `cycles`, `orphaned`, `single_use`, `naming`
+  </Tab>
+  
+  <Tab title="C#, Dart, GDScript, Go">
+    **Full plugin depth**
+    
+    Language-specific detector implementations with deep AST analysis.
+  </Tab>
+  
+  <Tab title="Rust, Ruby, Java, Kotlin, +17 more">
+    **Generic linter + tree-sitter support**
+    
+    Uses external linters and tree-sitter parsing for basic detection.
+  </Tab>
+</Tabs>
+
+## Related Concepts
+
+- [Tiers](/concepts/tiers) - How detectors map to fix effort
+- [Scoring](/concepts/scoring) - How detector findings contribute to scores
+- [Workflow](/concepts/workflow) - The scan → next → fix → resolve cycle

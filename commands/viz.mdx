@@ -1,0 +1,247 @@
+---
+title: viz
+description: Generate interactive HTML treemap visualization
+---
+
+The `viz` command generates an interactive HTML treemap visualization of your codebase. It displays file sizes, findings, and dependency metrics in a visual, zoomable interface.
+
+## Usage
+
+```bash
+desloppify viz [OPTIONS]
+```
+
+## Options
+
+### `--output FILE`
+
+Output file path for the HTML visualization.
+
+**Default:** `.desloppify/treemap.html`
+
+```bash
+desloppify viz --output codebase-map.html
+```
+
+### `--path PATH`
+
+Project root directory to visualize.
+
+**Default:** Auto-detected from language configuration
+
+```bash
+desloppify viz --path ./src
+```
+
+### `--state FILE`
+
+Path to custom state file for including findings data.
+
+```bash
+desloppify viz --state .desloppify/custom-state.json
+```
+
+## Output
+
+The command generates a standalone HTML file with:
+- **Interactive treemap** using D3.js
+- **Zoom/navigation** by clicking on directories
+- **Color coding** based on findings density
+- **Tooltips** showing detailed metrics
+- **Summary dashboard** with overall stats
+
+### Viewing the Visualization
+
+After generation, open the file in a web browser:
+
+```bash
+desloppify viz
+# Output: Treemap written to .desloppify/treemap.html
+# Open in browser: file:///path/to/.desloppify/treemap.html
+```
+
+Or open directly:
+
+```bash
+open .desloppify/treemap.html  # macOS
+xdg-open .desloppify/treemap.html  # Linux
+start .desloppify/treemap.html  # Windows
+```
+
+## Visualization Features
+
+### Treemap Layout
+
+Files and directories are displayed as nested rectangles:
+- **Size**: Rectangle area represents lines of code (LOC)
+- **Color**: Intensity indicates findings density
+- **Nesting**: Shows directory hierarchy
+
+### Interactive Elements
+
+- **Click**: Zoom into a directory
+- **Hover**: Show tooltip with metrics
+- **Breadcrumb**: Navigate back to parent directories
+
+### Metrics Displayed
+
+For each file:
+- **LOC**: Lines of code
+- **Findings**: Total and open findings count
+- **Fan-in**: Number of files importing this file
+- **Fan-out**: Number of imports in this file
+- **Finding summaries**: Top 20 open findings
+
+### Dashboard Header
+
+Shows overall statistics:
+- **Total files**: Count of source files
+- **Total LOC**: Lines of code across codebase
+- **Total findings**: All findings (open + resolved)
+- **Open findings**: Currently open issues
+- **Overall score**: Health percentage
+- **Objective score**: Mechanical health percentage
+- **Strict score**: Strict scoring mode percentage
+
+## Color Coding
+
+The visualization uses color intensity to highlight problem areas:
+- **Green/Light**: Few or no findings
+- **Yellow/Orange**: Moderate findings
+- **Red/Dark**: High findings density
+
+## Examples
+
+### Generate with default settings
+
+```bash
+desloppify viz
+```
+
+Creates `.desloppify/treemap.html`
+
+### Custom output location
+
+```bash
+desloppify viz --output reports/codebase-visualization.html
+```
+
+### Visualize specific directory
+
+```bash
+desloppify viz --path src/components
+```
+
+### Use custom state file
+
+```bash
+desloppify viz --state .desloppify/archived-state.json --output old-viz.html
+```
+
+## Use Cases
+
+### Architecture Review
+
+Visually explore codebase structure and identify:
+- Large files that may need splitting
+- Highly coupled modules (high fan-in/fan-out)
+- Directories with concentrated findings
+
+### Stakeholder Communication
+
+Share the visualization with:
+- **Team members**: Identify areas needing attention
+- **Managers**: Show progress on code health
+- **New team members**: Orient to codebase structure
+
+### Trend Analysis
+
+Generate visualizations over time to:
+- Track growth of specific modules
+- Monitor findings distribution changes
+- Identify emerging hotspots
+
+### Refactoring Planning
+
+Use the visualization to:
+- Find large, complex files to refactor
+- Identify highly coupled modules
+- Prioritize cleanup efforts
+
+## Technical Details
+
+### Dependencies
+
+The visualization uses:
+- **D3.js v7**: Loaded from CDN for treemap rendering
+- **Standalone HTML**: No external dependencies to view
+
+### File Discovery
+
+The command:
+1. Auto-detects language from project structure
+2. Uses language-specific file finder or fallback
+3. Collects all source files matching language extensions
+4. Reads LOC for each file
+
+### Dependency Graph
+
+If the language plugin provides a `build_dep_graph` function:
+- Calculates fan-in (importers) and fan-out (imports)
+- Displays coupling metrics in tooltips
+
+Otherwise shows file-only view without dependency data.
+
+### Findings Integration
+
+When state is available:
+- Groups findings by file path
+- Shows total and open findings count
+- Displays top 20 finding summaries in tooltips
+- Colors nodes based on findings density
+
+### Performance
+
+For large codebases:
+- The visualization may take time to generate
+- Browser rendering is interactive and smooth
+- Zoom navigation helps manage complexity
+
+## Error Handling
+
+The command handles errors gracefully:
+- **Missing language plugin**: Uses fallback file discovery
+- **Unreadable files**: Skips and warns, continues processing
+- **Failed dependency graph**: Shows file-only view
+- **Write errors**: Reports error and exits
+
+## Accessibility
+
+The HTML visualization:
+- Works in all modern browsers
+- Responsive to window resizing
+- Keyboard navigable (tab through breadcrumbs)
+- High contrast mode compatible
+
+## Output Location
+
+By default, the visualization is written to:
+
+```
+.desloppify/treemap.html
+```
+
+This keeps it version-controlled if you track `.desloppify/` directory.
+
+To exclude from version control, add to `.gitignore`:
+
+```gitignore
+.desloppify/treemap.html
+```
+
+## Related Commands
+
+- [`tree`](/commands/tree) - Text-based annotated tree view
+- [`show`](/commands/show) - View detailed findings
+- [`status`](/commands/status) - Overall health dashboard
+- [`detect deps`](/commands/detect) - Analyze dependencies

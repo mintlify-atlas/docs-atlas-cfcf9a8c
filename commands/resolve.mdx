@@ -1,0 +1,338 @@
+---
+title: 'desloppify plan done'
+description: 'Mark findings as fixed, wontfix, or false positive'
+icon: 'check'
+---
+
+## Overview
+
+The `plan done` command marks findings as resolved. It's the primary way to track progress as you fix issues. The command updates scores, removes items from the queue, and shows you what to work on next.
+
+<Note>
+This command was previously called `desloppify resolve` and is now integrated into the plan workflow as `desloppify plan done`.
+</Note>
+
+## Basic Usage
+
+```bash
+desloppify plan done "<pattern>" --attest "I have actually fixed this and I am not gaming the score."
+```
+
+## Command Structure
+
+```bash
+desloppify plan done <patterns...> [options]
+```
+
+### Patterns
+
+Patterns can match findings by:
+
+- **Finding ID**: `security::src/auth/login.ts::password_plaintext`
+- **ID prefix**: `security::src/auth/`
+- **Detector name**: `unused`
+- **File path**: `src/components/Button.tsx`
+- **Directory**: `src/auth/`
+- **Glob**: `src/**/*.test.ts`
+
+Multiple patterns can be provided: they are combined with OR logic.
+
+## Required Options
+
+<ParamField path="--attest" type="string" required>
+  **Required** anti-gaming attestation. Must include BOTH keywords:
+  - `"I have actually"`
+  - `"not gaming"`
+  
+  This ensures you're marking items as resolved because you actually fixed them, not to artificially inflate scores.
+  
+  Example: `--attest "I have actually removed the unused import and verified the build passes. I am not gaming the score by resolving without fixing."`
+</ParamField>
+
+## Optional Parameters
+
+<ParamField path="--note" type="string">
+  Explanation of what you did to fix the issue. Highly recommended for team visibility and audit trail.
+  
+  Example: `--note "Replaced plaintext password with bcrypt hash"`
+</ParamField>
+
+<ParamField path="patterns" type="string[]">
+  One or more patterns matching the findings to resolve. See Patterns section above.
+</ParamField>
+
+## Resolution Workflows
+
+### Mark as Fixed (default)
+
+When you've actually fixed an issue:
+
+```bash
+desloppify plan done "unused::src/utils/format.ts::formatDate" \
+  --note "Removed unused export" \
+  --attest "I have actually deleted the unused function and I am not gaming the score."
+```
+
+### Batch Resolution
+
+Resolve multiple findings matching a pattern:
+
+```bash
+# Fix all unused imports in a directory
+desloppify plan done "unused::src/components/" \
+  --note "Cleaned up unused imports" \
+  --attest "I have actually removed all unused imports and I am not gaming."
+```
+
+### Resolve by Detector
+
+```bash
+# Mark all security findings as fixed
+desloppify plan done security \
+  --note "Addressed all XSS vulnerabilities" \
+  --attest "I have actually patched all security issues and I am not gaming."
+```
+
+## Alternative: Skip Workflow
+
+For items you don't intend to fix, use `plan skip` instead:
+
+### Temporary Skip
+
+```bash
+# Skip for now, will revisit
+desloppify plan skip "duplicate::src/legacy/" \
+  --reason "Legacy code, will refactor in Q3" \
+  --review-after 10
+```
+
+### Permanent Skip (Won't Fix)
+
+```bash
+# Won't fix (affects score)
+desloppify plan skip "complexity::src/parser.ts::parseExpression" \
+  --permanent \
+  --note "Complex parser logic is unavoidable" \
+  --attest "I have actually reviewed this and determined it's necessary complexity. I am not gaming."
+```
+
+### False Positive
+
+```bash
+# Mark as false positive (doesn't affect score)
+desloppify plan skip "security::src/admin/debug.ts::eval_usage" \
+  --false-positive \
+  --attest "I have actually verified this is sandboxed eval in admin-only debug mode. I am not gaming."
+```
+
+## Example Output
+
+### Single Finding Resolved
+
+```bash
+$ desloppify plan done "unused::src/utils/format.ts::formatDate" \
+    --note "Removed unused export" \
+    --attest "I have actually deleted the function. I am not gaming."
+
+  Resolved: 1 finding
+    unused::src/utils/format.ts::formatDate
+  
+  Plan updated: 1 item removed from queue.
+  
+  Score Movement:
+    Overall Score:    87.5 → 87.8 (+0.3)
+    Objective Score:  85.2 → 85.6 (+0.4)
+    Strict Score:     85.2 → 85.6 (+0.4)
+  
+  → Next: Run `desloppify next` to see what to work on
+```
+
+### Batch Resolution
+
+```bash
+$ desloppify plan done "unused::src/components/" \
+    --note "Cleanup" \
+    --attest "I have actually removed all unused code. I am not gaming."
+
+  Resolved: 12 findings
+    unused::src/components/Button.tsx::handleLegacyClick
+    unused::src/components/Modal.tsx::oldAnimation
+    unused::src/components/Input.tsx::validateEmail
+    ... (9 more)
+  
+  Plan updated: 12 items removed from queue.
+  
+  Score Movement:
+    Overall Score:    87.5 → 89.2 (+1.7)
+    Objective Score:  85.2 → 87.1 (+1.9)
+    Strict Score:     85.2 → 87.1 (+1.9)
+  
+  ⚠️  Large batch resolution (12 findings). Consider:
+     - Verify all are actually fixed
+     - Run `desloppify scan` to confirm
+  
+  → Next: Run `desloppify next --tier 2` for important issues
+```
+
+### Subjective Dimension Reset Hint
+
+```bash
+$ desloppify plan done "review::api_design" \
+    --attest "I have actually refactored the API. I am not gaming."
+
+  Resolved: 1 finding
+  
+  Score Movement:
+    Overall Score:    87.5 → 85.2 (-2.3)
+    Strict Score:     85.2 → 82.1 (-3.1)
+  
+  ⚠️  Subjective dimension reset
+      API Design: 92.0 → 0.0 (pending re-assessment)
+      
+      This is expected when resolving subjective findings.
+      Run review to re-assess:
+      
+      desloppify review --run-batches --parallel --scan-after-import
+```
+
+## Attestation Requirements
+
+Desloppify requires attestation to prevent score gaming:
+
+### Valid Attestation
+
+✅ Must include both phrases (case-insensitive):
+- `"I have actually"`
+- `"not gaming"`
+
+```bash
+--attest "I have actually fixed the security issue by adding input validation. I am not gaming the score by resolving without fixing."
+```
+
+### Invalid Attestation
+
+❌ Missing required keywords:
+
+```bash
+--attest "I fixed this"  # Missing both phrases
+```
+
+❌ Only one phrase:
+
+```bash
+--attest "I have actually fixed this"  # Missing "not gaming"
+```
+
+### Why Attestation?
+
+Attestation creates an audit trail and psychological commitment to honest score tracking. It's designed to make score gaming socially and professionally costly.
+
+## Batch Resolution Safeguards
+
+### Won't Fix Batch Warning
+
+When resolving many items as `wontfix`, Desloppify warns:
+
+```bash
+⚠️  Large batch wontfix (25 findings)
+    This will significantly impact your score.
+    Consider:
+    - Is this truly unfixable?
+    - Should these be temporary skips instead?
+    - Use --false-positive if they're detector errors
+```
+
+### Confirmation for Large Batches
+
+For batches over 10 findings, Desloppify may prompt for confirmation (future enhancement).
+
+## State and Plan Updates
+
+When you resolve findings:
+
+1. **State update** - Finding status changes from `open` → `fixed`
+2. **Score recalculation** - Scores update immediately
+3. **Plan purge** - Resolved items removed from living plan queue
+4. **Attestation log** - Resolution recorded with timestamp and attestation
+
+## Error Handling
+
+### No Matching Findings
+
+```bash
+$ desloppify plan done "nonexistent::pattern" --attest "..."
+
+No open findings matching: nonexistent::pattern
+```
+
+### Missing Attestation
+
+```bash
+$ desloppify plan done "unused::src/foo.ts"
+
+Error: Manual resolve requires --attest
+
+Required keywords: 'I have actually' and 'not gaming'.
+
+Example:
+  --attest "I have actually removed the unused code and verified \
+            the build passes. I am not gaming the score by resolving \
+            without fixing."
+```
+
+### Won't Fix Without Note
+
+```bash
+$ desloppify plan skip pattern --permanent --attest "..."
+
+Error: --permanent requires --note
+
+Provide an explanation of why this won't be fixed.
+```
+
+## Integration with Workflow
+
+### Typical Development Loop
+
+```bash
+# 1. See what to work on
+desloppify next
+
+# 2. Fix the issue in your editor
+vim src/auth/login.ts
+
+# 3. Mark as done
+desloppify plan done "security::src/auth/login.ts::password_plaintext" \
+  --note "Implemented bcrypt hashing" \
+  --attest "I have actually added password hashing. I am not gaming."
+
+# 4. Verify with scan
+desloppify scan
+
+# 5. Check progress
+desloppify status
+```
+
+### CI/CD Integration
+
+You typically don't resolve findings in CI - resolution happens in development. However, CI can verify:
+
+```bash
+# Ensure no critical findings remain
+desloppify next --tier 1 --format json | jq -e '.items | length == 0'
+```
+
+## Related Commands
+
+- [`plan skip`](/commands/plan) - Temporarily or permanently skip findings
+- [`plan unskip`](/commands/plan) - Bring skipped findings back to queue
+- [`plan reopen`](/commands/plan) - Reopen resolved findings
+- [`next`](/commands/next) - See what to work on next
+- [`scan`](/commands/scan) - Re-scan to verify fixes
+
+## See Also
+
+- [Living Plan](/concepts/living-plan)
+- [Attestation](/concepts/attestation)
+- [Work Queue](/concepts/work-queue)
+- [Scoring System](/concepts/scoring)

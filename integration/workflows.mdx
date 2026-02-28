@@ -1,0 +1,686 @@
+---
+title: "Workflows & Best Practices"
+description: "Example workflows for different code quality improvement scenarios"
+icon: "diagram-project"
+---
+
+## Overview
+
+Desloppify supports multiple workflows depending on your goal. This page shows real-world examples for common scenarios.
+
+## Workflow 1: New Project Quality Baseline
+
+**Goal**: Start a new project with high quality standards from day one.
+
+<Steps>
+  <Step title="Install and initialize">
+    ```bash
+    pip install --upgrade "desloppify[full]"
+    desloppify scan --path . --reset-subjective
+    ```
+    
+    This creates your initial quality baseline.
+  </Step>
+  
+  <Step title="Set ambitious target">
+    ```bash
+    desloppify config set target_strict_score 98
+    ```
+    
+    New projects should aim for 98+ since there's no legacy debt.
+  </Step>
+  
+  <Step title="Enable CI gate">
+    Add a GitHub Action that blocks PRs below target:
+    
+    ```yaml .github/workflows/quality-gate.yml
+    name: Quality Gate
+    on: [pull_request]
+    
+    jobs:
+      quality:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with:
+              python-version: '3.11'
+          - run: pip install "desloppify[full]"
+          - run: desloppify scan --path .
+          - run: |
+              SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+              if (( $(echo "$SCORE < 98" | bc -l) )); then
+                echo "Quality below target"
+                exit 1
+              fi
+    ```
+  </Step>
+  
+  <Step title="Use with agents during development">
+    When building features, ask your AI agent:
+    
+    ```
+    Build this feature and maintain the Desloppify score above 98.
+    Run desloppify scan after implementation.
+    ```
+  </Step>
+</Steps>
+
+## Workflow 2: Legacy Codebase Improvement
+
+**Goal**: Gradually improve an existing codebase without disrupting active development.
+
+<Steps>
+  <Step title="Establish baseline">
+    ```bash
+    pip install --upgrade "desloppify[full]"
+    desloppify scan --path src/
+    desloppify status
+    ```
+    
+    Note the current score (e.g., 68.2).
+  </Step>
+  
+  <Step title="Set incremental target">
+    Don't jump to 95 immediately. Increase gradually:
+    
+    ```bash
+    desloppify config set target_strict_score 72
+    ```
+    
+    Increase by 3-5 points each sprint.
+  </Step>
+  
+  <Step title="Create improvement plan">
+    ```bash
+    desloppify plan
+    ```
+    
+    This shows all issues prioritized. Focus on quick wins first (T1/T2).
+  </Step>
+  
+  <Step title="Delegate to agent">
+    Use the agent integration:
+    
+    ```bash
+    desloppify update-skill claude
+    ```
+    
+    Then tell your agent:
+    
+    ```
+    Improve the codebase quality. Run:
+    
+    desloppify next
+    
+    Fix issues one by one until we hit the target score of 72.
+    Focus on T1 and T2 issues first.
+    ```
+  </Step>
+  
+  <Step title="Review and rescan">
+    After the agent makes fixes:
+    
+    ```bash
+    desloppify scan --path src/
+    desloppify status
+    ```
+    
+    Once you hit 72, increase target to 76, repeat.
+  </Step>
+</Steps>
+
+## Workflow 3: Pre-Release Quality Sprint
+
+**Goal**: Clean up code quality before a major release.
+
+<Steps>
+  <Step title="Run comprehensive scan">
+    ```bash
+    desloppify scan --path . --reset-subjective
+    ```
+    
+    This resets subjective reviews to get a fresh assessment.
+  </Step>
+  
+  <Step title="Run subjective review">
+    ```bash
+    desloppify review --run-batches --runner codex --parallel --scan-after-import
+    ```
+    
+    This runs a full subjective quality review across all dimensions.
+  </Step>
+  
+  <Step title="Cluster issues by area">
+    ```bash
+    desloppify plan
+    desloppify plan cluster create auth-cleanup
+    desloppify plan cluster create api-errors
+    desloppify plan cluster create naming
+    ```
+    
+    Group related issues for batch fixing.
+  </Step>
+  
+  <Step title="Work through clusters">
+    Focus the agent on one cluster at a time:
+    
+    ```bash
+    desloppify plan focus auth-cleanup
+    desloppify next --cluster auth-cleanup
+    ```
+    
+    Tell your agent:
+    
+    ```
+    Fix all issues in the auth-cleanup cluster.
+    Run desloppify next --cluster auth-cleanup repeatedly.
+    ```
+  </Step>
+  
+  <Step title="Generate release scorecard">
+    ```bash
+    desloppify scan --path . --badge-path release-scorecard.png
+    ```
+    
+    Include this in release notes to show quality commitment.
+  </Step>
+</Steps>
+
+## Workflow 4: Code Review Assistant
+
+**Goal**: Use Desloppify during code review to catch quality issues.
+
+<Steps>
+  <Step title="PR author runs scan">
+    Before submitting PR:
+    
+    ```bash
+    desloppify scan --path .
+    desloppify next --count 5
+    ```
+    
+    Fix any new issues found.
+  </Step>
+  
+  <Step title="CI enforces quality">
+    GitHub Action runs on PR and comments with findings:
+    
+    ```yaml
+    - name: Generate report
+      run: |
+        desloppify scan --path .
+        desloppify next --count 10 > pr-comment.md
+    
+    - name: Comment on PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('pr-comment.md', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## Desloppify Quality Report\n\n${report}`
+          });
+    ```
+  </Step>
+  
+  <Step title="Reviewer checks score impact">
+    Reviewer can see if PR improves or degrades quality:
+    
+    ```bash
+    # On main branch
+    git checkout main
+    desloppify scan --path .
+    BASELINE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+    
+    # On PR branch
+    git checkout pr-branch
+    desloppify scan --path .
+    CURRENT=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+    
+    echo "Score change: $BASELINE -> $CURRENT"
+    ```
+  </Step>
+</Steps>
+
+## Workflow 5: Refactoring Safety Net
+
+**Goal**: Use Desloppify to ensure refactoring improves (not degrades) quality.
+
+<Steps>
+  <Step title="Baseline before refactor">
+    ```bash
+    desloppify scan --path .
+    desloppify status > baseline.txt
+    desloppify show --status open > baseline-issues.txt
+    ```
+    
+    Save current state.
+  </Step>
+  
+  <Step title="Perform refactor">
+    Make your changes (e.g., extract duplicated code, rename confusing functions).
+  </Step>
+  
+  <Step title="Rescan and compare">
+    ```bash
+    desloppify scan --path .
+    desloppify status > after.txt
+    
+    # Compare
+    diff baseline.txt after.txt
+    ```
+    
+    Score should improve or stay stable.
+  </Step>
+  
+  <Step title="Check cascade effects">
+    ```bash
+    desloppify show --status open
+    ```
+    
+    Large refactors may surface new issues (e.g., newly exposed orphaned code). This is good — fix them!
+  </Step>
+  
+  <Step title="Agent cleanup">
+    If refactor exposed new issues:
+    
+    ```bash
+    desloppify next
+    ```
+    
+    Tell your agent:
+    
+    ```
+    The refactor exposed some new quality issues. Fix them using desloppify next.
+    ```
+  </Step>
+</Steps>
+
+## Workflow 6: Multi-Language Monorepo
+
+**Goal**: Maintain quality across multiple languages in one repo.
+
+<Steps>
+  <Step title="Scan each language separately">
+    ```bash
+    # TypeScript frontend
+    desloppify scan --path frontend/ --lang typescript
+    
+    # Python backend
+    desloppify scan --path backend/ --lang python
+    
+    # C# services
+    desloppify scan --path services/ --lang csharp
+    ```
+    
+    Each maintains separate state in `.desloppify/state_<lang>.json`.
+  </Step>
+  
+  <Step title="Set language-specific targets">
+    Different parts may have different quality levels:
+    
+    ```bash
+    # Frontend is new, aim high
+    cd frontend/
+    desloppify config set target_strict_score 95
+    
+    # Backend is legacy, start lower
+    cd ../backend/
+    desloppify config set target_strict_score 75
+    ```
+  </Step>
+  
+  <Step title="CI runs all scans">
+    ```yaml
+    jobs:
+      quality-frontend:
+        steps:
+          - run: desloppify scan --path frontend/ --lang typescript
+      
+      quality-backend:
+        steps:
+          - run: desloppify scan --path backend/ --lang python
+      
+      quality-services:
+        steps:
+          - run: desloppify scan --path services/ --lang csharp
+    ```
+  </Step>
+  
+  <Step title="Aggregate scorecards">
+    Generate a combined report:
+    
+    ```bash
+    echo "# Quality Report" > report.md
+    
+    echo "\n## Frontend (TypeScript)" >> report.md
+    desloppify scan --path frontend/ --lang typescript
+    desloppify status >> report.md
+    
+    echo "\n## Backend (Python)" >> report.md
+    desloppify scan --path backend/ --lang python
+    desloppify status >> report.md
+    
+    echo "\n## Services (C#)" >> report.md
+    desloppify scan --path services/ --lang csharp
+    desloppify status >> report.md
+    ```
+  </Step>
+</Steps>
+
+## Workflow 7: Team Quality Dashboard
+
+**Goal**: Track quality trends over time for the whole team.
+
+<Steps>
+  <Step title="Nightly CI job">
+    ```yaml
+    name: Nightly Quality Scan
+    
+    on:
+      schedule:
+        - cron: '0 2 * * *'  # 2 AM daily
+    
+    jobs:
+      scan:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - run: pip install "desloppify[full]"
+          - run: desloppify scan --path .
+          - run: desloppify status > quality-report.txt
+          - run: cp scorecard.png scorecard-$(date +%Y-%m-%d).png
+          
+          - name: Upload artifacts
+            uses: actions/upload-artifact@v4
+            with:
+              name: quality-report-$(date +%Y-%m-%d)
+              path: |
+                quality-report.txt
+                scorecard-*.png
+    ```
+  </Step>
+  
+  <Step title="Extract metrics">
+    Parse and store metrics:
+    
+    ```bash
+    DATE=$(date +%Y-%m-%d)
+    SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+    
+    echo "$DATE,$SCORE" >> quality-history.csv
+    ```
+  </Step>
+  
+  <Step title="Visualize trends">
+    Use a simple script to plot:
+    
+    ```python
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    
+    df = pd.read_csv('quality-history.csv', names=['date', 'score'])
+    df['date'] = pd.to_datetime(df['date'])
+    
+    plt.plot(df['date'], df['score'])
+    plt.title('Code Quality Trend')
+    plt.ylabel('Strict Score')
+    plt.savefig('quality-trend.png')
+    ```
+  </Step>
+  
+  <Step title="Weekly review">
+    Team reviews the trend during weekly meeting:
+    
+    - Celebrate improvements
+    - Investigate drops
+    - Adjust targets if needed
+  </Step>
+</Steps>
+
+## Best Practices
+
+### Working with Agents
+
+<AccordionGroup>
+  <Accordion title="Let agents work in clusters">
+    Don't micromanage individual fixes. Let the agent:
+    
+    1. Review the full `plan`
+    2. Create clusters for related issues
+    3. Work through clusters systematically
+    
+    Example agent prompt:
+    
+    ```
+    Review the desloppify plan and create logical clusters.
+    Then work through each cluster, fixing all related issues.
+    After each cluster, rescan to check for cascade effects.
+    ```
+  </Accordion>
+  
+  <Accordion title="Trust the agent on refactors">
+    If the agent wants to do a large refactor to fix a T4 issue, let it:
+    
+    ```
+    The T4 god component issue requires splitting UserManager into 3 classes.
+    This is a large refactor but will significantly improve the score.
+    Proceed? Yes/No
+    ```
+    
+    Large refactors often unlock multiple fixes at once.
+  </Accordion>
+  
+  <Accordion title="Rescan after structural changes">
+    After big refactors, always rescan:
+    
+    ```bash
+    desloppify scan --path .
+    ```
+    
+    This finds:
+    - Issues that cascade-resolved (e.g., dead code removal)
+    - New issues exposed by changes
+  </Accordion>
+</AccordionGroup>
+
+### Managing Scope
+
+<AccordionGroup>
+  <Accordion title="Use zones to exclude non-production code">
+    Don't score test fixtures, migrations, generated code:
+    
+    ```bash
+    desloppify zone set tests/fixtures/ test
+    desloppify zone set migrations/ generated
+    desloppify zone set vendor/ vendor
+    ```
+    
+    These areas won't affect your score.
+  </Accordion>
+  
+  <Accordion title="Start small, expand gradually">
+    Don't scan the whole monorepo on day 1. Start with:
+    
+    ```bash
+    desloppify scan --path src/core/
+    ```
+    
+    Once that's clean, expand:
+    
+    ```bash
+    desloppify scan --path src/
+    ```
+  </Accordion>
+  
+  <Accordion title="Use --exclude for noise">
+    Exclude paths that generate too many false positives:
+    
+    ```bash
+    desloppify scan --path . --exclude node_modules --exclude build --exclude dist
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Handling Issues
+
+<AccordionGroup>
+  <Accordion title="Don't abuse wontfix">
+    Marking issues as `wontfix` hurts your strict score.
+    
+    Only use `wontfix` for:
+    - False positives (better: mark `false_positive`)
+    - Genuine tech debt you're deferring
+    
+    Example:
+    
+    ```bash
+    # Good: false positive
+    desloppify resolve false_positive src/utils/logger.ts:42 \
+      --note "This console.log is for user output, not debug"
+    
+    # Good: genuine defer
+    desloppify resolve wontfix src/legacy/oldApi.ts \
+      --note "Will fix during v2 rewrite in Q3"
+    
+    # Bad: avoiding work
+    desloppify resolve wontfix src/auth/
+    ```
+  </Accordion>
+  
+  <Accordion title="Use plan defer for low-priority items">
+    If something is valid but not urgent:
+    
+    ```bash
+    desloppify plan defer src/ui/experimental/
+    ```
+    
+    This moves it down the queue without marking wontfix.
+  </Accordion>
+  
+  <Accordion title="Challenge past wontfix decisions">
+    If your strict score lags behind overall:
+    
+    ```bash
+    desloppify show --status wontfix
+    ```
+    
+    Review these. Many can be fixed now.
+  </Accordion>
+</AccordionGroup>
+
+### Subjective Reviews
+
+<AccordionGroup>
+  <Accordion title="Run reviews at logical milestones">
+    Don't review continuously. Review when:
+    
+    - Starting a new project (establish baseline)
+    - Before major releases
+    - After large refactors
+    - Monthly for active projects
+    - Quarterly for stable projects
+  </Accordion>
+  
+  <Accordion title="Use blind review for objectivity">
+    The best reviews are blind (no score anchoring):
+    
+    ```bash
+    desloppify review --run-batches --runner codex --parallel
+    ```
+    
+    This uses `review_packet_blind.json` which hides past scores.
+  </Accordion>
+  
+  <Accordion title="Reset subjective baseline for fresh start">
+    If you've done major refactoring:
+    
+    ```bash
+    desloppify scan --path . --reset-subjective
+    ```
+    
+    This resets subjective to 0, prompting a new review.
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Pattern: Fix All T1 First
+
+```bash
+# See all T1 issues
+desloppify show --tier 1 --status open
+
+# Auto-fix what you can
+desloppify fix unused_imports --dry-run
+desloppify fix unused_imports
+
+desloppify fix debug_logs --dry-run
+desloppify fix debug_logs
+
+# Rescan
+desloppify scan --path .
+```
+
+### Pattern: Directory-by-Directory Cleanup
+
+```bash
+# Focus on one directory
+desloppify show src/auth/
+
+# Move to top of queue
+desloppify plan move "src/auth/" top
+
+# Work through it
+desloppify next  # Will prioritize src/auth/ issues
+
+# Repeat for next directory
+```
+
+### Pattern: Pre-Commit Quality Check
+
+```bash .git/hooks/pre-commit
+#!/bin/bash
+
+# Run quick scan
+desloppify scan --path .
+
+# Get current score
+SCORE=$(desloppify status | grep "Strict score:" | awk '{print $3}')
+TARGET=$(desloppify config show | grep target_strict_score | awk '{print $2}')
+
+# Warn if below target (don't block)
+if (( $(echo "$SCORE < $TARGET" | bc -l) )); then
+  echo "⚠️  Quality below target: $SCORE < $TARGET"
+  echo "Run 'desloppify next' to see issues"
+fi
+
+exit 0  # Don't block commit
+```
+
+### Pattern: Issue Attribution
+
+```bash
+# Find who introduced an issue
+desloppify show <issue-id>
+git blame <file>:<line>
+
+# Assign to them
+git log --oneline <file> | head -n 5
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="AI Coding Agents" icon="robot" href="/integration/agents">
+    Use Desloppify with AI agents for systematic improvement
+  </Card>
+  
+  <Card title="CI/CD Integration" icon="github" href="/integration/ci-cd">
+    Enforce quality gates in your CI pipeline
+  </Card>
+</CardGroup>

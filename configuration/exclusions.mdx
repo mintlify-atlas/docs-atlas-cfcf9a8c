@@ -1,0 +1,425 @@
+---
+title: Exclusions
+description: How to exclude paths and patterns from scanning
+---
+
+## Overview
+
+Desloppify provides multiple ways to exclude files and directories from analysis:
+
+- **Exclude patterns** - Skip paths entirely during scanning
+- **Ignore patterns** - Scan files but suppress specific findings
+- **Command-line flags** - Temporary exclusions for single runs
+
+## Exclude Patterns
+
+Exclude patterns prevent files from being scanned at all. Use this for:
+
+- Test directories
+- Generated code
+- Third-party dependencies
+- Build artifacts
+- Migration files
+
+### Adding Exclusions
+
+#### Via CLI Command (Recommended)
+
+```bash
+desloppify exclude <pattern>
+```
+
+**Examples:**
+
+```bash
+# Exclude entire directories
+desloppify exclude migrations
+desloppify exclude tests
+desloppify exclude __pycache__
+
+# Exclude specific paths
+desloppify exclude src/legacy/old-api.ts
+desloppify exclude dist
+```
+
+**Effect:**
+- Adds pattern to `.desloppify/config.json`
+- Sets `needs_rescan: true` flag
+- Persists across all future scans
+
+#### Via Config File
+
+Directly edit `.desloppify/config.json`:
+
+```json .desloppify/config.json
+{
+  "exclude": [
+    "migrations",
+    "tests",
+    "__pycache__",
+    "node_modules",
+    "dist",
+    "build"
+  ]
+}
+```
+
+#### Via CLI Flag (Temporary)
+
+```bash
+desloppify scan --exclude <pattern>
+```
+
+**Examples:**
+
+```bash
+# Single exclusion
+desloppify scan --exclude tests
+
+# Multiple exclusions (repeatable flag)
+desloppify scan --exclude tests --exclude migrations
+
+# Global flag (works with all commands)
+desloppify --exclude tests scan
+desloppify --exclude tests show src/
+```
+
+**Effect:**
+- Applies only to current command
+- Does NOT persist to config file
+- Useful for one-off scans or experimentation
+
+### Pattern Matching
+
+Exclude patterns use **component/prefix matching**:
+
+- Matches any path **containing** the pattern as a component
+- Not glob-based or regex
+- Case-sensitive on Linux/macOS, case-insensitive on Windows
+
+**Examples:**
+
+| Pattern | Matches | Doesn't Match |
+|---------|---------|---------------|
+| `tests` | `tests/unit.py`<br/>`src/tests/helpers.ts`<br/>`app/tests.py` | `src/test_utils.py`<br/>`pytest.ini` |
+| `migrations` | `db/migrations/001.sql`<br/>`migrations/init.py` | `src/migrate.py` |
+| `__pycache__` | `app/__pycache__/main.cpython-311.pyc`<br/>`__pycache__/` | `cache_utils.py` |
+| `src/legacy` | `src/legacy/old-api.ts`<br/>`src/legacy/utils/fmt.ts` | `src/utils/legacy-adapter.ts` |
+
+### Common Exclusion Patterns
+
+#### Python Projects
+
+```bash
+desloppify exclude __pycache__
+desloppify exclude .pytest_cache
+desloppify exclude .venv
+desloppify exclude venv
+desloppify exclude migrations
+desloppify exclude tests
+```
+
+#### TypeScript/JavaScript Projects
+
+```bash
+desloppify exclude node_modules
+desloppify exclude dist
+desloppify exclude build
+desloppify exclude .next
+desloppify exclude coverage
+desloppify exclude tests
+```
+
+#### C# / .NET Projects
+
+```bash
+desloppify exclude bin
+desloppify exclude obj
+desloppify exclude Migrations
+desloppify exclude packages
+```
+
+#### Multi-Language Projects
+
+```bash
+desloppify exclude tests
+desloppify exclude __tests__
+desloppify exclude spec
+desloppify exclude .git
+desloppify exclude node_modules
+desloppify exclude __pycache__
+```
+
+## Ignore Patterns
+
+Ignore patterns scan files but **suppress specific findings**. Use this when:
+
+- A finding is intentional and acceptable
+- Legacy code needs temporary allowances
+- False positives need suppression
+
+### Adding Ignore Patterns
+
+```bash
+desloppify ignore <pattern> --attest "<reason>"
+```
+
+**Attestation requirement:**
+
+To prevent gaming the score, ignore requires an attestation that includes:
+- "I have actually" (describing the concrete change)
+- "not gaming" (acknowledging non-gaming intent)
+
+**Examples:**
+
+```bash
+# Ignore all unused findings in a file
+desloppify ignore "unused::src/legacy/old-api.ts" \
+  --attest "I have actually verified this API is actively used by external services and I am not gaming the score."
+
+# Ignore specific detector globally
+desloppify ignore "logs::" \
+  --attest "I have actually added structured logging and verified console.log are intentional debug aids, not gaming."
+
+# Ignore all findings in a directory
+desloppify ignore "src/legacy/" \
+  --attest "I have actually documented this legacy code for planned refactor in Q2 and I am not gaming."
+```
+
+### Ignore Pattern Syntax
+
+| Pattern | Matches |
+|---------|----------|
+| `src/file.ts` | All findings in that file |
+| `src/legacy/` | All findings in that directory |
+| `unused::` | All findings from `unused` detector |
+| `unused::src/file.ts` | Unused findings in specific file |
+| `unused::src/file.ts::React` | Specific unused import of `React` |
+
+### Viewing Ignore Patterns
+
+```bash
+desloppify config show
+```
+
+Look for the `ignore` and `ignore_metadata` fields:
+
+```json
+{
+  "ignore": [
+    "unused::src/legacy/old-api.ts",
+    "logs::"
+  ],
+  "ignore_metadata": {
+    "unused::src/legacy/old-api.ts": {
+      "note": "I have actually verified this API is actively used...",
+      "added_at": "2026-02-28T10:30:00Z"
+    },
+    "logs::": {
+      "note": "I have actually added structured logging...",
+      "added_at": "2026-02-28T11:15:00Z"
+    }
+  }
+}
+```
+
+### Removing Ignore Patterns
+
+Manually edit `.desloppify/config.json` and remove entries from `ignore` and `ignore_metadata`.
+
+## Exclude vs. Ignore
+
+| Feature | Exclude | Ignore |
+|---------|---------|--------|
+| **Effect** | Skip file entirely | Suppress specific findings |
+| **Use case** | Tests, generated code, dependencies | Intentional code, false positives |
+| **Performance** | Faster (files not scanned) | Slower (files scanned) |
+| **Granularity** | Path-based | Finding-based (detector + path) |
+| **Attestation** | Not required | Required |
+| **Score impact** | None (files not counted) | Findings marked as suppressed |
+
+**When to use Exclude:**
+- `node_modules/`, `__pycache__/`, `dist/`
+- Test files you don't want analyzed
+- Generated code that shouldn't be scanned
+
+**When to use Ignore:**
+- Legacy code with known issues
+- Intentional patterns flagged as issues
+- Temporary suppression during refactor
+
+## Temporary Exclusions
+
+### One-Off Scans
+
+```bash
+# Scan only production code, skip tests temporarily
+desloppify scan --exclude tests --exclude spec
+
+# Quick scan without slow detectors and test directories
+desloppify scan --skip-slow --exclude tests
+```
+
+### CI/CD Profiles
+
+```bash
+# CI profile automatically excludes common test/build directories
+desloppify scan --profile ci
+```
+
+The `ci` profile applies sensible defaults for CI environments.
+
+## Advanced: Per-Language Exclusions
+
+Language plugins may have their own exclusion logic:
+
+### TypeScript/JavaScript
+
+- `node_modules/` is typically auto-excluded by language detection
+- Use exclusions for monorepo packages: `--exclude packages/legacy`
+
+### Python
+
+- `__pycache__`, `.pytest_cache` should be excluded
+- Virtual environments: `--exclude venv --exclude .venv`
+
+### C#
+
+- `bin/`, `obj/` are build artifacts
+- `Migrations/` in Entity Framework projects
+
+## Checking Active Exclusions
+
+### View Config
+
+```bash
+desloppify config show
+```
+
+Look for the `exclude` field in the output.
+
+### Test Exclusion
+
+```bash
+# Scan with verbose output to see what's being skipped
+desloppify scan --path .
+
+# Check which files are included
+desloppify tree --depth 3
+```
+
+## Rescan After Changes
+
+When you modify exclusions in config:
+
+1. The `needs_rescan` flag is automatically set
+2. Next scan will warn: "Config has changed, recommend full rescan"
+3. Run a full scan to update results:
+
+```bash
+desloppify scan
+```
+
+## Example Configurations
+
+### Minimal Python Project
+
+```json .desloppify/config.json
+{
+  "exclude": [
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "tests"
+  ]
+}
+```
+
+### TypeScript Monorepo
+
+```json .desloppify/config.json
+{
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    "packages/legacy",
+    "packages/deprecated"
+  ]
+}
+```
+
+### Full-Stack Project
+
+```json .desloppify/config.json
+{
+  "exclude": [
+    "node_modules",
+    "__pycache__",
+    "dist",
+    "build",
+    "migrations",
+    "tests",
+    "__tests__",
+    ".venv",
+    "venv",
+    "bin",
+    "obj",
+    ".git",
+    "coverage"
+  ]
+}
+```
+
+## Best Practices
+
+1. **Exclude generated code** - Don't analyze what you don't control
+2. **Exclude dependencies** - Focus on your codebase, not libraries
+3. **Exclude tests selectively** - Test quality matters, but may need different standards
+4. **Use ignore sparingly** - Over-suppression defeats the purpose
+5. **Document ignore reasons** - Future you will thank present you
+6. **Review exclusions periodically** - Outdated patterns waste performance
+
+## Troubleshooting
+
+### "No files found to scan"
+
+You may have excluded too much:
+
+```bash
+# Check what's being excluded
+desloppify config show
+
+# Try scanning with no exclusions
+desloppify scan --path . --lang <language>
+```
+
+### "Scan is too slow"
+
+Exclude unnecessary directories:
+
+```bash
+# Identify large directories
+desloppify tree --sort loc
+
+# Exclude appropriately
+desloppify exclude large-generated-dir
+```
+
+### "Exclusion not working"
+
+Check pattern matching:
+
+- Patterns are component-based, not globs
+- `tests` matches `src/tests/` and `tests/`, not `test_utils.py`
+- Use exact path components: `src/legacy/old-api.ts`
+
+## Related Commands
+
+- [Project Configuration](/configuration/project-config) - Persistent config settings
+- [Environment Variables](/configuration/environment-variables) - Runtime overrides
+- `desloppify exclude <pattern>` - Add exclusion pattern
+- `desloppify ignore <pattern> --attest "..."` - Suppress findings
+- `desloppify config show` - View current configuration

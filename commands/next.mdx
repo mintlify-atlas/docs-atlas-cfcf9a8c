@@ -1,0 +1,327 @@
+---
+title: 'desloppify next'
+description: 'Show next highest-priority items from the work queue'
+icon: 'arrow-right'
+---
+
+## Overview
+
+The `next` command shows the highest-priority items from your work queue. It uses intelligent ranking that considers tier, dimension impact, plan overrides, and cluster focus.
+
+## Basic Usage
+
+```bash
+desloppify next
+```
+
+Shows the single highest-priority item to work on.
+
+## Command Options
+
+### Queue Configuration
+
+<ParamField path="--count" type="integer">
+  Number of items to show. Default: `1`
+  
+  Example: `--count 10` shows top 10 items
+</ParamField>
+
+<ParamField path="--tier" type="integer">
+  Show only items from a specific tier. Choices: `1`, `2`, `3`, `4`
+  
+  - T1 = Critical (security, data loss)
+  - T2 = Important (bugs, correctness)
+  - T3 = Moderate (quality, duplication)
+  - T4 = Cosmetic (style, subjective)
+</ParamField>
+
+<ParamField path="--scope" type="string">
+  Optional scope filter. Can be:
+  - File path: `src/components/Button.tsx`
+  - Directory: `src/auth/`
+  - Detector name: `unused`
+  - ID prefix: `security::src/`
+  - Glob pattern: `src/**/*.ts`
+</ParamField>
+
+<ParamField path="--status" type="string">
+  Status filter for queue items. Default: `open`
+  
+  Choices: `open`, `fixed`, `wontfix`, `false_positive`, `auto_resolved`, `all`
+</ParamField>
+
+### Display Options
+
+<ParamField path="--group" type="string">
+  Group output by category. Default: `item`
+  
+  Choices:
+  - `item` - Show individual findings
+  - `file` - Group by file
+  - `detector` - Group by detector type
+  - `tier` - Group by priority tier
+</ParamField>
+
+<ParamField path="--format" type="string">
+  Output format. Default: `terminal`
+  
+  Choices:
+  - `terminal` - Colorized terminal output
+  - `json` - JSON data structure
+  - `md` - Markdown format
+</ParamField>
+
+<ParamField path="--output" type="string">
+  Write output to file instead of stdout. Use with `--format json` or `--format md`.
+  
+  Example: `--output queue.json --format json`
+</ParamField>
+
+### Advanced Filtering
+
+<ParamField path="--cluster" type="string">
+  Filter to a specific plan cluster. If you have an active cluster set via `plan focus`, it auto-applies.
+  
+  Example: `--cluster auth-refactor`
+</ParamField>
+
+<ParamField path="--include-skipped" type="boolean">
+  Include items marked as skipped (temporary, permanent, or false positive) in the queue.
+</ParamField>
+
+<ParamField path="--no-tier-fallback" type="boolean">
+  Do not auto-fallback to another tier when `--tier` has no items. By default, if your specified tier is empty, Desloppify shows the next populated tier.
+</ParamField>
+
+### Debugging
+
+<ParamField path="--explain" type="boolean">
+  Show ranking and tier-fallback rationale. Useful for understanding why items are ordered the way they are.
+</ParamField>
+
+### Global Options
+
+<ParamField path="--state" type="string">
+  Path to state file. Default: `.desloppify/state.json`
+</ParamField>
+
+<ParamField path="--lang" type="string">
+  Language context for narrative generation.
+</ParamField>
+
+## Tier System
+
+Findings are prioritized by tier:
+
+| Tier | Priority | Description | Examples |
+|------|----------|-------------|----------|
+| T1 | Critical | Security issues, data loss risks | SQL injection, null pointer dereference |
+| T2 | Important | Bugs, correctness, major smells | Logic errors, API misuse |
+| T3 | Moderate | Code quality, duplication, dead code | Unused imports, duplicate code |
+| T4 | Cosmetic | Style, subjective review dimensions | Naming, structure, API design |
+
+## Examples
+
+### Show single next item
+
+```bash
+desloppify next
+```
+
+### Show top 10 items
+
+```bash
+desloppify next --count 10
+```
+
+### Show only critical (T1) items
+
+```bash
+desloppify next --tier 1
+```
+
+### Show next item in specific directory
+
+```bash
+desloppify next --scope src/auth/
+```
+
+### Show next items grouped by file
+
+```bash
+desloppify next --count 20 --group file
+```
+
+### Show with explanation of ranking
+
+```bash
+desloppify next --explain
+```
+
+### Show items in a cluster
+
+```bash
+desloppify next --cluster auth-refactor --count 5
+```
+
+### Export queue to JSON
+
+```bash
+desloppify next --count 50 --format json --output queue.json
+```
+
+### Show all statuses (including resolved)
+
+```bash
+desloppify next --status all --count 20
+```
+
+## Example Output
+
+### Single Item (default)
+
+```bash
+$ desloppify next
+
+Next: 1 item (T2 Important)
+
+  security::src/auth/login.ts::password_plaintext
+  Severity: T2 Important
+  File: src/auth/login.ts:42
+  
+  Password stored in plaintext variable before hashing.
+  Recommendation: Hash immediately upon receipt.
+  
+  → desloppify plan done "security::src/auth/login.ts::password_plaintext" \
+      --note "hashed password inline" \
+      --attest "I have actually ..."
+```
+
+### Multiple Items
+
+```bash
+$ desloppify next --count 5
+
+Next: 5 items
+
+T2 Important (2):
+  1. security::src/auth/login.ts::password_plaintext
+     src/auth/login.ts:42 — Password in plaintext
+  
+  2. bug::src/api/users.ts::null_check
+     src/api/users.ts:128 — Missing null check
+
+T3 Moderate (3):
+  3. unused::src/utils/format.ts::formatDate
+     src/utils/format.ts:15 — Unused export
+  
+  4. dead_code::src/components/Modal.tsx::handleClose
+     src/components/Modal.tsx:78 — Unreachable code
+  
+  5. duplicate::src/services/api.ts::fetchUser
+     src/services/api.ts:45 — Duplicate of fetchUserById
+
+→ Work on security and bugs first (T2)
+```
+
+### Grouped by File
+
+```bash
+$ desloppify next --count 10 --group file
+
+Next: 10 items grouped by file
+
+src/auth/login.ts (3 issues):
+  - security::password_plaintext (T2)
+  - unused::validateEmail (T3)
+  - dead_code::oldAuthFlow (T3)
+
+src/api/users.ts (2 issues):
+  - bug::null_check (T2)
+  - duplicate::fetchUser (T3)
+
+src/components/Modal.tsx (1 issue):
+  - dead_code::handleClose (T3)
+```
+
+### With Explanation
+
+```bash
+$ desloppify next --explain
+
+Queue Build:
+  Total findings: 42
+  T1 Critical: 0
+  T2 Important: 5
+  T3 Moderate: 25
+  T4 Cosmetic: 12
+  
+  Tier fallback: T1 empty → T2
+  Plan overrides: 2 items moved to top
+  Active cluster: auth-refactor (12 items)
+
+Next: 1 item (T2 Important)
+
+  security::src/auth/login.ts::password_plaintext
+  
+  Ranking:
+    - Tier: T2 (Important)
+    - In active cluster: auth-refactor
+    - Plan override: moved to top
+    - Dimension impact: Security (-5.0 pts)
+```
+
+## JSON Output Format
+
+When using `--format json`, the output structure is:
+
+```json
+{
+  "command": "next",
+  "items": [
+    {
+      "id": "security::src/auth/login.ts::password_plaintext",
+      "detector": "security",
+      "file": "src/auth/login.ts",
+      "line": 42,
+      "tier": 2,
+      "status": "open",
+      "summary": "Password in plaintext",
+      "description": "Password stored in plaintext variable before hashing.",
+      "recommendation": "Hash immediately upon receipt."
+    }
+  ],
+  "queue_meta": {
+    "total": 42,
+    "shown": 1,
+    "by_tier": {"1": 0, "2": 5, "3": 25, "4": 12}
+  },
+  "overall_score": 87.5,
+  "narrative": {
+    "headline": "Focus on security and correctness issues"
+  }
+}
+```
+
+## Integration with Living Plan
+
+The `next` command respects your living plan:
+
+- **Custom ordering** - Items moved via `plan move` appear first
+- **Cluster focus** - When a cluster is active, only show items in that cluster
+- **Skip tracking** - Skipped items are hidden (unless `--include-skipped`)
+- **Done tracking** - Completed items are excluded
+
+## Related Commands
+
+- [`status`](/commands/status) - See overall health dashboard
+- [`plan`](/commands/plan) - Manage work queue prioritization
+- [`show`](/commands/show) - Investigate specific findings
+- [`resolve`](/commands/resolve) - Mark findings as fixed
+
+## See Also
+
+- [Work Queue](/concepts/work-queue)
+- [Living Plan](/concepts/living-plan)
+- [Tiers](/concepts/tiers)
+- [Scoring System](/concepts/scoring)

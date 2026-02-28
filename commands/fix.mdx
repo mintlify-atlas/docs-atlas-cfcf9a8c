@@ -1,0 +1,162 @@
+---
+title: fix
+description: Auto-fix mechanical issues with language-specific fixers
+icon: wrench
+---
+
+The `fix` command automatically fixes mechanical code quality issues using language-specific fixers. It can remove unused imports, debug logs, and other auto-fixable problems.
+
+## Usage
+
+```bash
+desloppify fix <fixer> [options]
+```
+
+## Options
+
+<ParamField path="fixer" type="string" required>
+  Name of the fixer to run. Use `desloppify langs` to see available fixers for each language.
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean">
+  Preview changes without modifying files. Shows what would be fixed with sample output.
+</ParamField>
+
+<ParamField path="--path" type="string">
+  Directory to scan (defaults to language-specific source directory).
+</ParamField>
+
+<ParamField path="--state" type="string">
+  Path to state file (defaults to `.desloppify/state.json`).
+</ParamField>
+
+## Available Fixers
+
+Fixers vary by language. Common fixers include:
+
+### TypeScript/JavaScript
+- `logs` - Remove debug console.log statements
+- `unused` - Remove unused imports and variables
+- `deprecated` - Update deprecated API usage
+
+### Python
+- `unused` - Remove unused imports
+- `logs` - Remove debug print statements
+
+### C#
+- `unused` - Remove unused using statements
+
+## Examples
+
+### Preview fixes (dry run)
+
+```bash
+desloppify fix unused --dry-run
+```
+
+This shows what would be fixed without modifying any files:
+
+```
+  Found 23 unused imports across 8 files
+
+  src/utils/helpers.ts:
+    - import { oldHelper } from './old'
+    - import type { UnusedType } from './types'
+
+  [Dry run — no files modified]
+```
+
+### Apply fixes
+
+```bash
+desloppify fix unused
+```
+
+<Warning>
+Always commit your changes before running fixers without `--dry-run`. This allows you to review and revert if needed.
+</Warning>
+
+### Fix specific directory
+
+```bash
+desloppify fix logs --path src/components/
+```
+
+## Workflow Integration
+
+### 1. Check uncommitted changes
+
+The fix command warns if you have uncommitted changes:
+
+```bash
+$ desloppify fix unused
+  Warning: uncommitted changes detected. Commit or stash before running fixers.
+```
+
+### 2. Preview with dry run
+
+```bash
+desloppify fix unused --dry-run
+```
+
+### 3. Apply fixes
+
+```bash
+desloppify fix unused
+```
+
+### 4. Update state
+
+After fixing issues, mark them as resolved:
+
+```bash
+desloppify plan done unused --attest "Applied auto-fixer"
+```
+
+## Fix Results
+
+After applying fixes, you'll see:
+
+```
+  Fixed 23 unused imports across 8 files
+  Removed 47 lines
+
+  src/utils/helpers.ts: 3 imports removed
+  src/components/Button.tsx: 2 imports removed
+  src/services/api.ts: 5 imports removed
+  ...
+
+  ✓ Rescanned and updated state
+  Score improved: 87.3 → 89.1 (+1.8)
+```
+
+## Auto-rescan
+
+By default, `fix` automatically runs a rescan after applying changes to update your score. This ensures the state reflects the improvements.
+
+## Review Mode
+
+Some languages support `fix review` which applies fixes suggested by the subjective review system:
+
+```bash
+desloppify fix review
+```
+
+This applies LLM-suggested refactorings that have been validated and approved.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="detect" icon="magnifying-glass" href="/commands/detect">
+    Run detectors to find issues
+  </Card>
+  <Card title="scan" icon="radar" href="/commands/scan">
+    Full codebase scan
+  </Card>
+  <Card title="next" icon="arrow-right" href="/commands/next">
+    Get next issue to fix
+  </Card>
+  <Card title="resolve" icon="check" href="/commands/resolve">
+    Mark issues as resolved
+  </Card>
+</CardGroup>

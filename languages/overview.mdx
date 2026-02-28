@@ -1,0 +1,293 @@
+---
+title: Language Support Overview
+description: Multi-language codebase quality scanner supporting 28+ languages through a two-tier plugin architecture
+---
+
+Desloppify analyzes code quality across 28+ languages through a flexible plugin architecture with two integration tiers:
+
+<CardGroup cols={2}>
+  <Card title="Full Plugins" icon="star" iconType="solid">
+    6 languages with hand-written detectors, language-specific smell analysis, and auto-fixers
+  </Card>
+  <Card title="Generic Plugins" icon="plug" iconType="solid">
+    22 languages with external tool integration and optional tree-sitter AST analysis
+  </Card>
+</CardGroup>
+
+## The Two-Tier Architecture
+
+### Full Plugins (6 languages)
+
+Full plugins have custom detector phases that understand language-specific idioms:
+
+<Tabs>
+  <Tab title="Python">
+    - AST smell detection (15+ custom phases)
+    - ruff, bandit, import-linter adapters
+    - Unused code detection
+    - Security analysis (subprocess patterns, SQL injection, deserialization)
+    - Auto-fixers for imports and common patterns
+    - **Plugin path**: `desloppify/languages/python/`
+  </Tab>
+  <Tab title="TypeScript">
+    - React-aware detectors (hooks, props, component patterns)
+    - knip adapter for dead code elimination
+    - 7 auto-fixers (unused imports/vars/params, useEffect, if-chains)
+    - Export analysis and facade pattern detection
+    - Concerns separation
+    - **Plugin path**: `desloppify/languages/typescript/`
+  </Tab>
+  <Tab title="C#/.NET">
+    - Structural + coupling + security detectors
+    - dotnet-based dependency analysis
+    - LINQ pattern detection
+    - Namespace boundary enforcement
+    - **Plugin path**: `desloppify/languages/csharp/`
+  </Tab>
+  <Tab title="Dart">
+    - Flutter-aware widget analysis
+    - pubspec.yaml integration
+    - Test coverage mapping
+    - State management patterns
+    - **Plugin path**: `desloppify/languages/dart/`
+  </Tab>
+  <Tab title="GDScript">
+    - Godot scene-aware analysis
+    - Tree-sitter AST phases
+    - Signal/node path validation
+    - Script dependency graph
+    - **Plugin path**: `desloppify/languages/gdscript/`
+  </Tab>
+  <Tab title="Go">
+    - golangci-lint + go vet adapters
+    - Regex-based function extraction
+    - Test coverage mapping (import-based)
+    - Package dependency analysis
+    - **Plugin path**: `desloppify/languages/go/`
+  </Tab>
+</Tabs>
+
+### Generic Plugins (22 languages)
+
+Generic plugins run external linters and get AST analysis when tree-sitter grammars are available:
+
+<CardGroup cols={3}>
+  <Card title="Rust" icon="rust" iconType="duotone">
+    **Tools**: cargo clippy, cargo check  
+    **AST**: functions, imports, structs
+  </Card>
+  <Card title="Ruby" icon="gem" iconType="duotone">
+    **Tools**: rubocop  
+    **AST**: methods, classes, imports
+  </Card>
+  <Card title="Java" icon="java" iconType="duotone">
+    **Tools**: pmd  
+    **AST**: methods, constructors, classes
+  </Card>
+  <Card title="Kotlin" icon="code" iconType="duotone">
+    **Tools**: ktlint, detekt  
+    **AST**: functions, classes, imports
+  </Card>
+  <Card title="Swift" icon="apple" iconType="duotone">
+    **Tools**: swiftlint  
+    **AST**: functions, classes
+  </Card>
+  <Card title="PHP" icon="php" iconType="duotone">
+    **Tools**: phpstan  
+    **AST**: functions, methods, classes
+  </Card>
+  <Card title="Scala" icon="code" iconType="duotone">
+    **Tools**: scalac  
+    **AST**: functions, classes, imports
+  </Card>
+  <Card title="Elixir" icon="code" iconType="duotone">
+    **Tools**: credo  
+    **AST**: functions, imports
+  </Card>
+  <Card title="Haskell" icon="code" iconType="duotone">
+    **Tools**: hlint  
+    **AST**: functions, imports
+  </Card>
+  <Card title="JavaScript" icon="js" iconType="duotone">
+    **Tools**: eslint  
+    **AST**: functions, methods, classes
+  </Card>
+  <Card title="C/C++" icon="c" iconType="duotone">
+    **Tools**: cppcheck  
+    **AST**: functions, classes, includes
+  </Card>
+  <Card title="Bash" icon="terminal" iconType="duotone">
+    **Tools**: shellcheck  
+    **AST**: functions, source imports
+  </Card>
+  <Card title="Lua" icon="code" iconType="duotone">
+    **Tools**: luacheck  
+    **AST**: functions, imports
+  </Card>
+  <Card title="Perl" icon="code" iconType="duotone">
+    **Tools**: perlcritic  
+    **AST**: subroutines, imports
+  </Card>
+  <Card title="Clojure" icon="code" iconType="duotone">
+    **Tools**: clj-kondo  
+    **AST**: functions
+  </Card>
+  <Card title="Zig" icon="code" iconType="duotone">
+    **Tools**: zig build  
+    **AST**: functions, imports
+  </Card>
+  <Card title="Nim" icon="code" iconType="duotone">
+    **Tools**: nim check  
+    **AST**: functions
+  </Card>
+  <Card title="PowerShell" icon="microsoft" iconType="duotone">
+    **Tools**: PSScriptAnalyzer  
+    **AST**: functions
+  </Card>
+  <Card title="R" icon="chart-line" iconType="duotone">
+    **Tools**: (AST-only)  
+    **AST**: functions, imports
+  </Card>
+  <Card title="Erlang" icon="code" iconType="duotone">
+    **Tools**: dialyzer  
+    **AST**: functions, imports
+  </Card>
+  <Card title="OCaml" icon="code" iconType="duotone">
+    **Tools**: ocaml compiler  
+    **AST**: functions, modules, imports
+  </Card>
+  <Card title="F#" icon="code" iconType="duotone">
+    **Tools**: dotnet build  
+    **AST**: functions, imports
+  </Card>
+</CardGroup>
+
+## What Every Language Gets
+
+Regardless of tier, all plugins receive:
+
+<AccordionGroup>
+  <Accordion title="Cross-Language Detectors">
+    - **Security scanning**: Common vulnerability patterns (hardcoded secrets, unsafe regex, shell injection risks)
+    - **Boilerplate detection**: Repetitive code patterns
+    - **Duplicate detection**: Copy-pasted code blocks
+    - **Zone classification**: Automatic categorization (test/vendor/config/generated)
+    - **Scoring integration**: Automatic detector → dimension mapping
+  </Accordion>
+
+  <Accordion title="Subjective Review (LLM-powered)">
+    - Design pattern analysis
+    - Architectural consistency
+    - Naming conventions
+    - Code clarity assessment
+    - Maintainability concerns
+  </Accordion>
+
+  <Accordion title="Generic Plugins with Tree-Sitter Get More" icon="plus">
+    When `tree-sitter-language-pack` is installed:
+
+    - **Function/method extraction** → duplicate detection
+    - **Import parsing** → dependency graph → coupling/orphan/cycle detection
+    - **Test coverage analysis**: Import-based + naming convention mapping
+    - **AST complexity metrics**:
+      - Nesting depth
+      - Cyclomatic complexity
+      - Long functions
+      - Parameter count
+      - Callback depth
+    - **God class/struct detection**: Methods > 15, LOC > 500, attributes > 10
+    - **Responsibility cohesion**: Disconnected function clusters
+    - **Unused import detection**
+    - **Signature variance analysis**
+    - **AST smell detection**: Empty catch blocks, unreachable code
+  </Accordion>
+</AccordionGroup>
+
+## Full Plugin Advantages
+
+Full plugins add language-specific capabilities:
+
+<Steps>
+  <Step title="Custom Smell Detectors">
+    Per-line pattern matching that understands language idioms:
+    
+    - **Python**: Mutable class variables, `lru_cache` on methods with mutable args, subprocess without timeouts
+    - **TypeScript**: React hooks violations, stale closures, prop drilling
+    - **C#**: LINQ anti-patterns, disposable leaks, async/await misuse
+  </Step>
+
+  <Step title="Language-Aware Auto-Fixers">
+    - **Python**: Import rewriting, unused code removal
+    - **TypeScript**: 7 fixers (imports, vars, params, useEffect, if-chains, logs)
+    - **Others**: Framework-specific transformations
+  </Step>
+
+  <Step title="Custom Review Dimensions">
+    Language-specific design review criteria:
+    
+    - **Python**: PEP-8 alignment, Django/Flask patterns
+    - **TypeScript**: React component design, hook dependencies
+    - **C#**: SOLID principles, Entity Framework patterns
+  </Step>
+
+  <Step title="Framework-Specific Detectors">
+    - **TypeScript**: React hooks, component lifecycle
+    - **Dart**: Flutter widget trees, StatefulWidget patterns
+    - **GDScript**: Godot signals, scene tree navigation
+  </Step>
+</Steps>
+
+## Language Auto-Detection
+
+Desloppify automatically detects the project language using markers:
+
+```bash
+# Python: pyproject.toml, setup.py, setup.cfg
+# TypeScript: package.json (with .ts/.tsx files)
+# Rust: Cargo.toml
+# Go: go.mod
+# C#: *.csproj, *.sln
+# Java: pom.xml, build.gradle
+
+desloppify scan  # Auto-detects language
+desloppify scan --lang python  # Force specific language
+```
+
+<Info>
+  **Multi-language projects**: Run separate scans per language or use `--lang all` to analyze all detected languages.
+</Info>
+
+## When to Use Each Tier
+
+<Tabs>
+  <Tab title="Use Generic Plugins When">
+    - You need basic linting + security + duplicates
+    - External tools (eslint, rubocop, cargo clippy) already exist
+    - Tree-sitter provides sufficient AST analysis
+    - You want zero maintenance (tool updates are external)
+    
+    **Example**: Rust with cargo clippy + tree-sitter gives 80% of what most teams need.
+  </Tab>
+  <Tab title="Upgrade to Full Plugin When">
+    - You need language-specific smell detectors (beyond AST patterns)
+    - Auto-fixers require AST rewriting (not just text replacement)
+    - Custom coupling rules based on framework conventions
+    - You want full control over phase ordering and scoring
+    
+    **Example**: Python's 15+ custom phases catch Django ORM misuse, mutable default args, and `lru_cache` footguns.
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Full Plugins Deep Dive" icon="star" href="/languages/full-plugins">
+    Explore the 6 full plugins and their capabilities
+  </Card>
+  <Card title="Generic Plugins" icon="plug" href="/languages/generic-plugins">
+    Learn about tree-sitter integration and external tools
+  </Card>
+  <Card title="Add a New Language" icon="plus" href="/languages/adding-languages">
+    Guide to scaffolding a new language plugin
+  </Card>
+</CardGroup>

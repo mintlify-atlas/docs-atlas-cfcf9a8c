@@ -1,0 +1,186 @@
+---
+title: 'desloppify zone'
+description: 'View and manage file zone classifications'
+---
+
+## Overview
+
+The `zone` command helps you view and override how Desloppify classifies files into zones (production, test, config, generated, script, vendor). Zone classification affects which detectors and rules apply to each file.
+
+## Usage
+
+```bash
+desloppify zone [show|set|clear]
+```
+
+## Subcommands
+
+### Show zones
+
+Display zone classifications for all scanned files in your project.
+
+```bash
+desloppify zone
+# or explicitly
+desloppify zone show
+```
+
+**Output format:**
+- Files are grouped by zone type
+- Shows count of files in each zone
+- Marks manual overrides with `(override)`
+
+**Example output:**
+```
+Zone classifications (247 files)
+
+  production (189 files)
+    src/main.py
+    src/utils/helpers.py
+    ...
+
+  test (45 files)
+    tests/test_main.py
+    tests/test_utils.py
+    ...
+
+  config (8 files)
+    setup.py
+    pyproject.toml (override)
+    ...
+
+  2 override(s) active
+  Override: desloppify zone set <file> <zone>
+  Clear:    desloppify zone clear <file>
+```
+
+<Note>
+You must run `desloppify scan` before using this command. Zone classifications are computed during the scan.
+</Note>
+
+### Set zone override
+
+Manually classify a file into a specific zone, overriding the automatic detection.
+
+```bash
+desloppify zone set <file> <zone>
+```
+
+**Valid zones:**
+- `production` - Production code
+- `test` - Test files
+- `config` - Configuration files
+- `generated` - Auto-generated code
+- `script` - Build scripts and utilities
+- `vendor` - Third-party dependencies
+
+**Examples:**
+
+```bash
+# Mark a file as generated code
+desloppify zone set src/proto/messages_pb.py generated
+
+# Classify a utility as a script
+desloppify zone set tools/deploy.py script
+
+# Mark vendored code
+desloppify zone set lib/external/parser.py vendor
+```
+
+<Info>
+After setting zone overrides, run `desloppify scan` to apply the changes and re-analyze affected files.
+</Info>
+
+### Clear zone override
+
+Remove a manual zone classification, reverting to automatic detection.
+
+```bash
+desloppify zone clear <file>
+```
+
+**Examples:**
+
+```bash
+# Remove override for a file
+desloppify zone clear src/proto/messages_pb.py
+
+# Let Desloppify auto-detect the zone again
+desloppify zone clear tools/deploy.py
+```
+
+## Zone types explained
+
+<AccordionGroup>
+  <Accordion title="production">
+    Main application code that runs in production. Gets the most thorough analysis with all detectors enabled.
+  </Accordion>
+
+  <Accordion title="test">
+    Test files and fixtures. Some checks are relaxed (e.g., complexity limits, unused variables in fixtures).
+  </Accordion>
+
+  <Accordion title="config">
+    Configuration files, build scripts, package manifests. Minimal analysis focused on structure and validity.
+  </Accordion>
+
+  <Accordion title="generated">
+    Auto-generated code (protobuf, ORM models, etc.). Largely excluded from analysis since humans don't maintain it directly.
+  </Accordion>
+
+  <Accordion title="script">
+    Utility scripts, deployment tools, one-off automation. Less strict analysis than production code.
+  </Accordion>
+
+  <Accordion title="vendor">
+    Third-party dependencies and vendored libraries. Excluded from analysis.
+  </Accordion>
+</AccordionGroup>
+
+## How zones are detected
+
+Desloppify uses language-specific rules to automatically classify files:
+
+- **File path patterns** - Files in `tests/`, `test/`, `*_test.py` are marked as `test`
+- **File markers** - Generated file headers, `# -*- coding: utf-8 -*-` markers
+- **File extensions** - `.config.js`, `setup.py`, `package.json` are `config`
+- **Content analysis** - Import patterns, docstring conventions
+
+Manual overrides stored in `.desloppify/config.json` under `zone_overrides` take precedence.
+
+## Workflow
+
+<Steps>
+  <Step title="Run initial scan">
+    ```bash
+    desloppify scan
+    ```
+    This detects zones automatically based on language rules.
+  </Step>
+
+  <Step title="Review classifications">
+    ```bash
+    desloppify zone
+    ```
+    Check if files are classified correctly.
+  </Step>
+
+  <Step title="Fix misclassified files">
+    ```bash
+    desloppify zone set path/to/file.py generated
+    ```
+    Override incorrect automatic classifications.
+  </Step>
+
+  <Step title="Re-scan to apply">
+    ```bash
+    desloppify scan
+    ```
+    Changes take effect after re-scanning.
+  </Step>
+</Steps>
+
+## Related commands
+
+- [`desloppify scan`](/commands/scan) - Run analysis with zone rules
+- [`desloppify config`](/commands/config) - View all zone overrides in config

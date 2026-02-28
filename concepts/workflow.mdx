@@ -1,0 +1,573 @@
+---
+title: "Workflow"
+description: "The scan → next → fix → resolve workflow for systematic improvement"
+icon: "arrows-rotate"
+---
+
+## Overview
+
+Desloppify implements a **stateful feedback loop** designed for AI agents to systematically improve codebase quality. State persists across scans, enabling incremental progress over multiple sessions.
+
+<Steps>
+  <Step title="Scan" icon="radar">
+    Run all detectors, generate findings, calculate scores
+  </Step>
+  <Step title="Next" icon="arrow-right">
+    Get highest-priority finding to fix
+  </Step>
+  <Step title="Fix" icon="wrench">
+    Make code changes to resolve the issue
+  </Step>
+  <Step title="Resolve" icon="check">
+    Mark finding as fixed, update state, see score impact
+  </Step>
+</Steps>
+
+## The Core Loop
+
+```bash
+# Initial scan
+desloppify scan --path .
+
+# Get next highest-priority issue
+desloppify next
+
+# Fix the issue (agent makes code changes)
+# ...
+
+# Resolve the finding
+desloppify resolve fixed <pattern>
+
+# Repeat
+desloppify next
+```
+
+This loop continues until the **target strict score** is reached (default: 95).
+
+## Step 1: Scan
+
+The scan phase runs all detectors and updates state:
+
+```bash
+# Full scan
+desloppify scan --path .
+
+# Scan with subjective review reset (blind reassessment)
+desloppify scan --reset-subjective
+
+# Exclude paths
+desloppify scan --path . --exclude migrations --exclude tests
+```
+
+### What Happens During Scan
+
+<Accordion title="Detector Execution" icon="gears">
+  1. **Discovery**: Find all source files in scan path
+  2. **Extraction**: Parse AST, extract functions/classes (language-specific)
+  3. **Detection**: Run all mechanical detectors in parallel
+  4. **Merge**: Merge new findings with existing state
+  5. **Scoring**: Recalculate dimension scores and overall score
+</Accordion>
+
+<Accordion title="State Persistence" icon="database">
+  All findings and metadata are saved to `.desloppify/state.json`:
+  
+  ```json
+  {
+    "last_scan": "2026-02-28T18:30:00Z",
+    "scan_path": ".",
+    "findings": {
+      "unused_import_src_utils_ts_42": {
+        "id": "unused_import_src_utils_ts_42",
+        "detector": "unused",
+        "file": "src/utils.ts",
+        "line": 42,
+        "status": "open",
+        "confidence": "high",
+        "tier": 3,
+        "created_at": "2026-02-28T18:30:00Z"
+      }
+    },
+    "potentials": {
+      "unused": 523,
+      "dupes": 142,
+      "complexity": 87
+    },
+    "dimension_scores": {
+      "Code quality": {"score": 87.3, "checks": 523, "issues": 42}
+    },
+    "overall_score": 89.5,
+    "strict_score": 86.2
+  }
+  ```
+</Accordion>
+
+<Accordion title="Score Calculation" icon="calculator">
+  After findings are merged:
+  1. **Potential tracking**: Count total checks per detector
+  2. **Dimension aggregation**: Roll up detector stats into dimensions
+  3. **Weighted scoring**: Apply tier weights, confidence weights, sample dampening
+  4. **Overall blend**: Combine mechanical (40%) + subjective (60%)
+  
+  See [Scoring System](/concepts/scoring) for details.
+</Accordion>
+
+### Scan Output
+
+The scan command outputs:
+- Detector run summaries
+- New/updated/closed findings
+- Score changes (overall, strict, verified strict)
+- **Agent instructions** for next steps
+
+```bash
+$ desloppify scan --path .
+
+✓ TypeScript scan complete (28 detectors)
+
+  New findings: 17
+  Updated: 3
+  Auto-closed: 2
+  
+  Overall: 89.5 (+2.1)
+  Strict: 86.2 (+1.8)
+  
+→ Next step: run `desloppify next` to see highest-priority issue
+```
+
+<Tip>
+The scan output includes **agent instructions** - follow them exactly. Don't augment with your own analysis.
+</Tip>
+
+## Step 2: Next
+
+The `next` command shows the highest-priority finding:
+
+```bash
+# Default: next highest-priority issue
+desloppify next
+
+# Show score impact explanation
+desloppify next --explain
+
+# Show next N issues
+desloppify next --count 5
+
+# Filter by tier
+desloppify next --tier 4
+
+# Scope to directory
+desloppify next --scope src/core
+```
+
+### Priority Calculation
+
+From `desloppify/app/commands/next.py`, the priority queue considers:
+
+1. **Tier** (T4 > T3 > T2 > T1)
+2. **Score impact** (estimated improvement from fixing)
+3. **Confidence** (high > medium > low)
+4. **Living plan overrides** (manual reordering via `plan` command)
+5. **Clusters** (grouped related issues)
+
+### Next Output
+
+```bash
+$ desloppify next --explain
+
+━━━ Next Priority Issue ━━━
+
+  File: src/components/UserProfile.tsx:145
+  Detector: gods (Tier 4, Security)
+  Issue: God component detected
+  
+  Reasons:
+    - 12 hooks (threshold: 8)
+    - 8 useEffect calls (threshold: 5)
+    - 487 LOC (threshold: 400)
+  
+  Score Impact: +2.3 points (strict: 86.2 → 88.5)
+  
+  Suggestion:
+    Split into smaller components:
+    - UserProfileHeader (display logic)
+    - UserProfileData (data fetching)
+    - UserProfileActions (interaction handlers)
+  
+→ Fix the issue, then run:
+  desloppify resolve fixed "src/components/UserProfile.tsx:145"
+```
+
+### Explain Mode
+
+With `--explain`, you get:
+- **Score impact estimate**: How much fixing this issue improves strict score
+- **Dimension breakdown**: Which dimension this affects
+- **Related issues**: Other findings in the same file/cluster
+
+## Step 3: Fix
+
+**Agent makes code changes** to resolve the issue. This step is **external** to Desloppify.
+
+Common fix patterns:
+
+<Tabs>
+  <Tab title="Remove Unused Code">
+    ```typescript
+    // Before
+    import { foo, bar, baz } from './utils';
+    //       ^^^ unused
+    
+    function example() {
+      return bar();
+    }
+    
+    // After
+    import { bar } from './utils';
+    
+    function example() {
+      return bar();
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Eliminate Duplication">
+    ```python
+    # Before: two near-duplicate functions
+    def process_user_data(user):
+        validated = validate(user)
+        normalized = normalize(validated)
+        return save(normalized)
+    
+    def process_admin_data(admin):
+        validated = validate(admin)
+        normalized = normalize(validated)
+        return save(normalized)
+    
+    # After: extract common logic
+    def process_entity_data(entity):
+        validated = validate(entity)
+        normalized = normalize(validated)
+        return save(normalized)
+    ```
+  </Tab>
+  
+  <Tab title="Split God Class">
+    ```typescript
+    // Before: 487 LOC, 12 hooks, 8 useEffect
+    function UserProfile() {
+      // ... massive component
+    }
+    
+    // After: split responsibilities
+    function UserProfile() {
+      return (
+        <>
+          <UserProfileHeader user={user} />
+          <UserProfileData userId={userId} />
+          <UserProfileActions onAction={handleAction} />
+        </>
+      );
+    }
+    
+    // Each subcomponent: ~100-150 LOC, 2-3 hooks
+    ```
+  </Tab>
+  
+  <Tab title="Fix Security Issue">
+    ```python
+    # Before: SQL injection vulnerability
+    def get_user(user_id):
+        query = f"SELECT * FROM users WHERE id = {user_id}"
+        return db.execute(query)
+    
+    # After: parameterized query
+    def get_user(user_id):
+        query = "SELECT * FROM users WHERE id = ?"
+        return db.execute(query, [user_id])
+    ```
+  </Tab>
+</Tabs>
+
+## Step 4: Resolve
+
+After fixing, mark the finding as resolved:
+
+```bash
+# Resolve by pattern (file:line)
+desloppify resolve fixed "src/components/UserProfile.tsx:145"
+
+# Resolve by ID
+desloppify resolve fixed "gods_src_components_UserProfile_tsx_145"
+
+# Resolve multiple findings
+desloppify resolve fixed "src/utils/*"
+
+# Mark as won't fix (still counts against strict score)
+desloppify resolve wontfix "legacy/old-code.ts" --attest "Legacy code, not worth refactoring"
+
+# Mark as false positive
+desloppify resolve false_positive "src/test-helper.ts:*" --attest "Test utility, intentionally simple"
+```
+
+### Resolve Status Options
+
+<CardGroup cols={4}>
+  <Card title="fixed" icon="check" color="#00d084">
+    Issue resolved by code changes
+  </Card>
+  <Card title="wontfix" icon="ban" color="#f59e0b">
+    Acknowledged but won't fix (counts against strict score)
+  </Card>
+  <Card title="false_positive" icon="xmark" color="#6b7280">
+    Not actually an issue
+  </Card>
+  <Card title="open" icon="circle-dot" color="#3b82f6">
+    Reopen a previously resolved finding
+  </Card>
+</CardGroup>
+
+### Attestation Requirement
+
+For `wontfix` and `false_positive`, you must provide an **attestation**:
+
+```bash
+desloppify resolve wontfix "legacy/*" --attest "Legacy module, no longer maintained"
+```
+
+Attestations are logged in `.desloppify/state.json` for audit trails.
+
+### Resolve Output
+
+```bash
+$ desloppify resolve fixed "src/components/UserProfile.tsx:145"
+
+✓ Resolved 1 finding as fixed
+
+  Overall: 89.5 → 91.2 (+1.7)
+  Strict: 86.2 → 88.5 (+2.3)
+  
+→ Next step: run `desloppify next`
+```
+
+The output shows:
+- Number of findings resolved
+- Score changes (confirms the estimate from `--explain`)
+- Next step instruction
+
+## Advanced Workflow Features
+
+### Plan Command
+
+Manually reorder priorities or cluster related issues:
+
+```bash
+# View current plan
+desloppify plan
+
+# Move issue to top of queue
+desloppify plan move <id> --position 1
+
+# Cluster related issues
+desloppify plan cluster "refactor-auth" --add <id1> --add <id2>
+
+# Set active cluster
+desloppify plan cluster "refactor-auth" --focus
+```
+
+Clusters help agents tackle related issues together (e.g., "all auth refactoring" or "duplication in utils/").
+
+### Show Command
+
+Explore findings by various filters:
+
+```bash
+# Show all findings for a file
+desloppify show "src/utils.ts"
+
+# Show all findings from a detector
+desloppify show dupes
+
+# Show by status
+desloppify show --status wontfix
+
+# Show by tier
+desloppify show --tier 4
+```
+
+### Fix Command (Auto-fix)
+
+For auto-fixable issues:
+
+```bash
+# Dry-run to preview changes
+desloppify fix unused --dry-run
+
+# Apply auto-fixes
+desloppify fix unused
+
+# Auto-resolve fixed findings
+desloppify fix unused --resolve
+```
+
+**Note**: Auto-fixers are still being built out. Most fixes currently require manual code changes.
+
+## Incremental Progress
+
+State persistence enables **multi-session improvement**:
+
+1. **Session 1**: Scan, fix 5 T4 issues, resolve them
+2. **Session 2**: Scan (updates findings), fix 10 T3 issues
+3. **Session 3**: Scan, run subjective review, fix low-scoring dimensions
+
+Each scan:
+- **Merges** new findings with existing state
+- **Auto-closes** findings for deleted code
+- **Preserves** resolution history and attestations
+
+```bash
+# Example multi-session workflow
+
+# Day 1
+desloppify scan --path .
+desloppify next --count 10  # Review batch
+# ... fix 5 issues ...
+desloppify resolve fixed "src/core/*"
+
+# Day 2
+desloppify scan  # Refresh findings
+desloppify next --tier 4
+# ... fix T4 issues ...
+desloppify resolve fixed <patterns>
+
+# Day 3
+desloppify review --prepare
+desloppify review --run-batches --runner codex
+desloppify scan  # Final refresh
+desloppify status  # Check if target reached
+```
+
+## Target Strict Score
+
+Set a quality goal:
+
+```bash
+# Set target (default: 95)
+desloppify config set target_strict_score 98
+
+# View progress toward target
+desloppify status
+```
+
+The workflow continues until `strict_score >= target_strict_score`.
+
+## Workflow State Files
+
+<AccordionGroup>
+  <Accordion title=".desloppify/state.json" icon="database">
+    Main state file:
+    - All findings (open, fixed, wontfix, false_positive)
+    - Potentials (detector check counts)
+    - Dimension scores
+    - Overall/strict/verified strict scores
+    - Subjective assessments
+    - Attestation log
+  </Accordion>
+  
+  <Accordion title=".desloppify/config.json" icon="gear">
+    Project configuration:
+    - `target_strict_score` (default: 95)
+    - `badge_path` (scorecard image path)
+    - `ignore_patterns` (exclusion rules)
+    - `zone_overrides` (manual zone classifications)
+  </Accordion>
+  
+  <Accordion title=".desloppify/query.json" icon="magnifying-glass">
+    Agent-facing output from `next` command:
+    - Next priority item(s)
+    - Score impact estimates
+    - Narrative context
+    - Suggested next command
+    
+    Used by agents to understand what to do next.
+  </Accordion>
+  
+  <Accordion title=".desloppify/plan.json" icon="list-check">
+    Living plan (optional):
+    - `queue_order`: manual priority overrides
+    - `overrides`: pin/skip/boost specific findings
+    - `clusters`: grouped related issues
+    - `active_cluster`: currently focused cluster
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Warning>
+**Don't skip scans**. Always scan before resolving findings to ensure state is fresh.
+</Warning>
+
+<Tip>
+**Follow the output instructions**. Each command prints the next recommended step - follow it exactly.
+</Tip>
+
+<Info>
+**Use `--explain`** to understand score impact before fixing. Helps prioritize high-value work.
+</Info>
+
+<Tip>
+**Batch related fixes**. Use clusters or scope filters to group similar issues (e.g., all duplication in a module).
+</Tip>
+
+## Workflow Example: Full Session
+
+```bash
+# 1. Initial scan
+$ desloppify scan --path src/
+✓ TypeScript scan complete
+  New findings: 42
+  Overall: 87.3
+  Strict: 84.1
+→ Run `desloppify next`
+
+# 2. Check highest priority
+$ desloppify next --explain
+━━━ Next Priority Issue ━━━
+  File: src/auth/validator.ts:89
+  Detector: security (Tier 4)
+  Issue: Unsafe eval usage
+  Score Impact: +3.2 points
+→ Fix and run: desloppify resolve fixed "src/auth/validator.ts:89"
+
+# 3. Fix the code
+# (agent removes eval, uses safer alternative)
+
+# 4. Resolve
+$ desloppify resolve fixed "src/auth/validator.ts:89"
+✓ Resolved 1 finding
+  Strict: 84.1 → 87.3 (+3.2)
+→ Run `desloppify next`
+
+# 5. Continue loop
+$ desloppify next
+━━━ Next Priority Issue ━━━
+  File: src/utils/helpers.ts:42
+  Detector: dupes (Tier 3)
+  Issue: Near-duplicate functions (similarity: 0.94)
+...
+
+# 6. Repeat until target reached
+$ desloppify status
+  Overall: 96.8
+  Strict: 95.2 ✓ (target: 95.0)
+  
+🎉 Target strict score reached!
+```
+
+## Related Commands
+
+- `desloppify status` - View scores and progress
+- `desloppify plan` - Manage priority queue
+- `desloppify show <pattern>` - Explore findings
+- `desloppify tree` - Annotated codebase tree
+- `desloppify viz` - Interactive HTML treemap

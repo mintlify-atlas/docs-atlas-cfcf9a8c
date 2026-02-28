@@ -1,0 +1,202 @@
+---
+title: 'desloppify langs'
+description: 'List all available language plugins'
+---
+
+## Overview
+
+The `langs` command displays all language plugins available in your Desloppify installation, showing their integration depth and capabilities. Use this to verify language support and understand what tools are available for each language.
+
+## Usage
+
+```bash
+desloppify langs
+```
+
+## Output format
+
+```
+Language        Depth         Tools
+────────────────────────────────────────────────────────────
+python          ████████      custom detectors
+typescript      █████░░░      linting, formatting (auto-fix)
+rust            ███░░░░░      basic checks
+javascript      █████░░░      linting (auto-fix)
+go              ███░░░░░      none
+```
+
+**Columns:**
+
+| Column | Description |
+|--------|-------------|
+| **Language** | Language plugin name |
+| **Depth** | Visual bar showing integration depth (more filled = deeper) |
+| **Tools** | Available detectors and features |
+
+## Integration depths
+
+The depth bar indicates how deeply Desloppify integrates with each language:
+
+<AccordionGroup>
+  <Accordion title="████████ full (8 bars)">
+    **Complete integration** with custom detectors, AST parsing, and auto-fixers.
+    
+    - Full abstract syntax tree analysis
+    - Language-specific code smell detection
+    - Custom complexity metrics
+    - Automated fixes for common issues
+    
+    **Example tools:** Custom detectors
+  </Accordion>
+
+  <Accordion title="█████░░░ standard (5 bars)">
+    **Standard integration** with language-specific detectors and some auto-fix capabilities.
+    
+    - File type detection and zone classification
+    - Basic linting and formatting
+    - Some automated fixes
+    - Standard code quality checks
+    
+    **Example tools:** Linting, formatting (auto-fix)
+  </Accordion>
+
+  <Accordion title="███░░░░░ shallow (3 bars)">
+    **Basic integration** with zone rules and generic checks.
+    
+    - File pattern recognition
+    - Zone classification (production/test/config)
+    - Generic text-based analysis
+    - Limited language-specific logic
+    
+    **Example tools:** Basic checks
+  </Accordion>
+
+  <Accordion title="██░░░░░░ minimal (2 bars)">
+    **Minimal support** - file discovery only.
+    
+    - File extension recognition
+    - Basic zone rules
+    - No custom detectors
+    
+    **Example tools:** None
+  </Accordion>
+</AccordionGroup>
+
+## Tool labels
+
+The **Tools** column shows what features are available:
+
+| Label | Description |
+|-------|-------------|
+| `custom detectors` | Language has full integration with custom analysis |
+| `linting` | Code style and quality checks |
+| `formatting` | Code formatting/prettification |
+| `basic checks` | Generic analysis (whitespace, line length, etc.) |
+| `none` | No custom tools (file discovery only) |
+| `(auto-fix)` | Automated fixes available for detected issues |
+
+## Sorting
+
+Languages are sorted by:
+1. **Integration depth** (full → standard → shallow → minimal)
+2. **Alphabetically** within each depth level
+
+This puts the most capable languages at the top.
+
+## Examples
+
+### Check if a language is supported
+
+```bash
+desloppify langs | grep python
+# Output:
+python          ████████      custom detectors
+```
+
+### Count available languages
+
+```bash
+desloppify langs | tail -n +3 | wc -l
+# Output: 12
+```
+
+### Find languages with auto-fix
+
+```bash
+desloppify langs | grep "auto-fix"
+# Output:
+typescript      █████░░░      linting, formatting (auto-fix)
+javascript      █████░░░      linting (auto-fix)
+```
+
+## When to use
+
+<AccordionGroup>
+  <Accordion title="Verify language support">
+    Before scanning a project, check if Desloppify has a plugin for your language:
+    ```bash
+    desloppify langs | grep kotlin
+    ```
+  </Accordion>
+
+  <Accordion title="Understand capabilities">
+    See what tools and detectors are available for your language to set expectations for scan results.
+  </Accordion>
+
+  <Accordion title="Compare integrations">
+    Evaluate trade-offs when working with multiple languages in a project. Languages with deeper integration provide more actionable feedback.
+  </Accordion>
+
+  <Accordion title="Development reference">
+    Plugin developers can use this to verify their new language appears in the registry:
+    ```bash
+    desloppify dev scaffold-lang rust --extension .rs
+    desloppify langs | grep rust
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Language detection
+
+During a scan, Desloppify:
+1. Discovers all files in the project
+2. Matches file extensions against language plugins
+3. Uses the most deeply-integrated matching language
+4. Applies that language's detectors and rules
+
+**Example:**
+- Project has `.py` files
+- `desloppify langs` shows Python with full integration
+- Scan uses Python's custom detectors and zone rules
+
+## Adding new languages
+
+If your language isn't listed:
+
+<Steps>
+  <Step title="Check the Desloppify repository">
+    New languages may be added in recent versions. Update your installation:
+    ```bash
+    pip install --upgrade desloppify
+    desloppify langs
+    ```
+  </Step>
+
+  <Step title="Request language support">
+    Open an issue on the Desloppify GitHub repository requesting support for your language.
+  </Step>
+
+  <Step title="Contribute a plugin">
+    Advanced users can add language support themselves:
+    ```bash
+    desloppify dev scaffold-lang <language> --extension <ext>
+    ```
+    See [`desloppify dev`](/commands/dev) for details.
+  </Step>
+</Steps>
+
+## Related commands
+
+- [`desloppify scan`](/commands/scan) - Run analysis using language plugins
+- [`desloppify dev scaffold-lang`](/commands/dev) - Create a new language plugin
+- [`desloppify config`](/commands/config) - Configure language-specific settings

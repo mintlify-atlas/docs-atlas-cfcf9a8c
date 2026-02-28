@@ -1,0 +1,272 @@
+---
+title: tree
+description: Print annotated codebase tree to terminal
+---
+
+The `tree` command displays a text-based hierarchical view of your codebase with annotations for lines of code, findings, and dependency coupling.
+
+## Usage
+
+```bash
+desloppify tree [OPTIONS]
+```
+
+## Options
+
+### `--depth N`
+
+Maximum tree depth to display.
+
+**Default:** `2`
+
+```bash
+desloppify tree --depth 3
+```
+
+### `--focus PATH`
+
+Zoom into a specific subdirectory.
+
+```bash
+desloppify tree --focus shared/components/MediaLightbox
+desloppify tree --focus src/utils
+```
+
+### `--min-loc N`
+
+Hide items below this line-of-code threshold.
+
+**Default:** `0` (show all)
+
+```bash
+desloppify tree --min-loc 100
+```
+
+### `--sort ORDER`
+
+Sort order for tree nodes.
+
+**Choices:** `loc`, `findings`, `coupling`
+
+**Default:** `loc`
+
+```bash
+desloppify tree --sort findings
+desloppify tree --sort coupling
+```
+
+### `--detail`
+
+Show finding summaries per file.
+
+```bash
+desloppify tree --detail
+```
+
+### `--path PATH`
+
+Project root directory.
+
+**Default:** Auto-detected from language configuration
+
+```bash
+desloppify tree --path ./src
+```
+
+### `--state FILE`
+
+Path to custom state file.
+
+```bash
+desloppify tree --state .desloppify/custom-state.json
+```
+
+## Output Format
+
+The tree displays:
+- **Directory structure** with indentation
+- **LOC (Lines of Code)** for each file/directory
+- **Finding counts** (open findings)
+- **Coupling metrics** (fan-in/fan-out) when available
+- **Finding summaries** (with `--detail` flag)
+
+### Example Output
+
+```
+src/ (12,450 LOC, 23 findings)
+├── components/ (4,200 LOC, 8 findings)
+│   ├── Modal.tsx (320 LOC, 2 findings)
+│   ├── Button.tsx (150 LOC, 1 finding)
+│   └── Form/ (890 LOC, 3 findings)
+├── utils/ (2,100 LOC, 7 findings)
+│   ├── api.ts (450 LOC, 3 findings, fan-in: 12)
+│   └── helpers.ts (280 LOC, 2 findings)
+└── pages/ (5,800 LOC, 6 findings)
+    ├── Home.tsx (890 LOC, 1 finding)
+    └── Dashboard.tsx (1,200 LOC, 3 findings)
+```
+
+### With `--detail` Flag
+
+```
+src/components/Modal.tsx (320 LOC, 2 findings)
+  - unused::Modal.tsx::oldProp (Unused prop parameter)
+  - smells::Modal.tsx::complex (High cyclomatic complexity)
+```
+
+## Sorting Options
+
+### By LOC (default)
+
+Largest files/directories first.
+
+```bash
+desloppify tree --sort loc
+```
+
+### By Findings
+
+Files/directories with most findings first.
+
+```bash
+desloppify tree --sort findings
+```
+
+### By Coupling
+
+Files with highest dependency coupling first (fan-in + fan-out).
+
+```bash
+desloppify tree --sort coupling
+```
+
+## Examples
+
+### Basic tree view
+
+```bash
+desloppify tree
+```
+
+### Deep tree with more levels
+
+```bash
+desloppify tree --depth 4
+```
+
+### Focus on specific directory
+
+```bash
+desloppify tree --focus src/components
+```
+
+### Show only large files
+
+```bash
+desloppify tree --min-loc 200 --depth 5
+```
+
+### Sort by findings to identify problem areas
+
+```bash
+desloppify tree --sort findings --detail
+```
+
+### Sort by coupling to find highly connected modules
+
+```bash
+desloppify tree --sort coupling --depth 3
+```
+
+### Detailed view of specific directory
+
+```bash
+desloppify tree --focus src/utils --detail --depth 3
+```
+
+## Use Cases
+
+### Architecture Overview
+
+Get a quick overview of codebase structure:
+
+```bash
+desloppify tree --depth 2
+```
+
+### Identify Problem Areas
+
+Find directories with most issues:
+
+```bash
+desloppify tree --sort findings --detail
+```
+
+### Analyze Dependencies
+
+Identify highly coupled modules:
+
+```bash
+desloppify tree --sort coupling --depth 4
+```
+
+### Filter Noise
+
+Hide small files to focus on major components:
+
+```bash
+desloppify tree --min-loc 150 --depth 3
+```
+
+### Deep Dive into Module
+
+Explore a specific directory in detail:
+
+```bash
+desloppify tree --focus src/api --depth 5 --detail
+```
+
+## Metrics Explained
+
+### LOC (Lines of Code)
+
+Total lines in the file (including comments and whitespace).
+
+### Findings
+
+Count of **open** findings for that file/directory.
+
+### Fan-in
+
+Number of files that import this file. High fan-in indicates central/shared modules.
+
+### Fan-out
+
+Number of files this file imports. High fan-out may indicate tight coupling.
+
+### Coupling
+
+Fan-in + fan-out. High values suggest refactoring opportunities.
+
+## Language Support
+
+The tree command uses language-specific file discovery:
+- Automatically detects language from project structure
+- Uses configured file extensions
+- Respects language-specific exclusion patterns
+
+For languages without a configured `file_finder`, falls back to scanning all registered language extensions.
+
+## Performance
+
+For large codebases:
+- Use `--min-loc` to filter out small files
+- Limit `--depth` to avoid deep recursion
+- Use `--focus` to narrow the scan scope
+
+## Related Commands
+
+- [`viz`](/commands/viz) - Interactive HTML treemap visualization
+- [`show`](/commands/show) - View detailed findings
+- [`status`](/commands/status) - Overall health dashboard
+- [`detect deps`](/commands/detect) - Analyze dependencies for specific files

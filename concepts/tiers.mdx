@@ -1,0 +1,313 @@
+---
+title: "Tier System"
+description: "The 4-tier classification system and how weighting works"
+icon: "layer-group"
+---
+
+## Overview
+
+Desloppify classifies all findings into **4 tiers** based on fix effort and complexity. This helps agents prioritize work and ensures that fixing easy issues doesn't game the score.
+
+## The Four Tiers
+
+<CardGroup cols={2}>
+  <Card title="T1: Auto-fix" icon="wand-magic-sparkles" color="#00d084">
+    **Weight: 1×**
+    
+    Mechanically fixable issues that can be auto-resolved.
+    
+    Examples:
+    - Unused imports
+    - Debug console.log statements
+    - Trailing whitespace
+  </Card>
+  
+  <Card title="T2: Quick Fix" icon="bolt" color="#0ea5e9">
+    **Weight: 2×**
+    
+    Manual fixes requiring minimal context or refactoring.
+    
+    Examples:
+    - Unused variables
+    - Dead exports
+    - Simple naming violations
+  </Card>
+  
+  <Card title="T3: Judgment" icon="scale-balanced" color="#f59e0b">
+    **Weight: 3×**
+    
+    Fixes requiring judgment calls and moderate refactoring.
+    
+    Examples:
+    - Near-duplicate code
+    - Single-use abstractions
+    - Code smells
+    - Naming improvements
+  </Card>
+  
+  <Card title="T4: Major Refactor" icon="hammer" color="#ef4444">
+    **Weight: 4×**
+    
+    Significant architectural changes or deep refactoring.
+    
+    Examples:
+    - God classes/components
+    - Mixed concerns
+    - Circular dependencies
+    - Security vulnerabilities
+    - Test coverage gaps
+  </Card>
+</CardGroup>
+
+## Tier Weighting
+
+Tiers have **multiplicative weights** that affect scoring and prioritization:
+
+```python
+# From desloppify/core/enums.py
+class Tier(enum.IntEnum):
+    AUTO_FIX = 1
+    QUICK_FIX = 2
+    JUDGMENT = 3
+    MAJOR_REFACTOR = 4
+
+# From desloppify/engine/_scoring/policy/core.py
+TIER_WEIGHTS = {
+    Tier.AUTO_FIX: 1,
+    Tier.QUICK_FIX: 2,
+    Tier.JUDGMENT: 3,
+    Tier.MAJOR_REFACTOR: 4,
+}
+```
+
+### Why Weighted Tiers?
+
+Weighted tiers prevent **score gaming** by ensuring:
+- Fixing one T4 issue has more impact than fixing four T1 issues
+- Agents can't boost scores by only tackling easy problems
+- High-impact refactoring is properly valued
+
+<Warning>
+The tier weights shown above are **conceptual** - in practice, tier assignment affects dimension scoring and prioritization, but the exact weighting mechanism depends on detector scoring policies.
+</Warning>
+
+## Tier Assignment by Detector
+
+Each detector maps to a specific tier based on typical fix effort:
+
+<Tabs>
+  <Tab title="T1 (Auto-fix)">
+    Currently, auto-fix tier is **reserved** for future auto-fixers.
+    
+    Planned detectors:
+    - Unused imports (with fixer)
+    - Debug logs (with fixer)
+    - Whitespace issues
+  </Tab>
+  
+  <Tab title="T2 (Quick Fix)">
+    Currently minimal. Most mechanical issues are T3.
+  </Tab>
+  
+  <Tab title="T3 (Judgment)">
+    **Most common tier** for mechanical detectors:
+    
+    ```python
+    # Code Quality (T3)
+    "unused": DetectorScoringPolicy("unused", "Code quality", 3),
+    "logs": DetectorScoringPolicy("logs", "Code quality", 3),
+    "exports": DetectorScoringPolicy("exports", "Code quality", 3),
+    "props": DetectorScoringPolicy("props", "Code quality", 3),
+    "smells": DetectorScoringPolicy("smells", "Code quality", 3),
+    "naming": DetectorScoringPolicy("naming", "Code quality", 3),
+    "patterns": DetectorScoringPolicy("patterns", "Code quality", 3),
+    "single_use": DetectorScoringPolicy("single_use", "Code quality", 3),
+    "coupling": DetectorScoringPolicy("coupling", "Code quality", 3),
+    "orphaned": DetectorScoringPolicy("orphaned", "Code quality", 3),
+    
+    # Duplication (T3)
+    "dupes": DetectorScoringPolicy("dupes", "Duplication", 3),
+    
+    # File Health (T3)
+    "structural": DetectorScoringPolicy("structural", "File health", 3),
+    ```
+  </Tab>
+  
+  <Tab title="T4 (Major Refactor)">
+    **High-impact architectural issues**:
+    
+    ```python
+    # Security (T4)
+    "security": DetectorScoringPolicy("security", "Security", 4, file_based=True),
+    "cycles": DetectorScoringPolicy("cycles", "Security", 4),
+    
+    # Test Health (T4)
+    "test_coverage": DetectorScoringPolicy(
+        "test_coverage", "Test health", 4, 
+        file_based=True, 
+        use_loc_weight=True
+    ),
+    ```
+    
+    Also includes god classes, mixed concerns, and major architectural refactors.
+  </Tab>
+</Tabs>
+
+## Dimensions and Tiers
+
+Each **dimension** is assigned a tier based on its primary detectors:
+
+```python
+# From desloppify/engine/_scoring/policy/core.py
+@dataclass(frozen=True)
+class Dimension:
+    name: str
+    tier: int
+    detectors: list[str]
+
+# Example dimensions
+Dimensions = [
+    Dimension(name="File health", tier=3, detectors=["structural", ...]),
+    Dimension(name="Code quality", tier=3, detectors=["unused", "logs", ...]),
+    Dimension(name="Duplication", tier=3, detectors=["dupes", ...]),
+    Dimension(name="Test health", tier=4, detectors=["test_coverage", ...]),
+    Dimension(name="Security", tier=4, detectors=["security", "cycles"]),
+]
+```
+
+Dimensions inherit the tier of their constituent detectors. If a dimension has mixed tiers, it takes the **highest tier**.
+
+## Tier-Based Prioritization
+
+The `next` command uses tiers for prioritization:
+
+```bash
+# Show next T3 issue only
+desloppify next --tier 3
+
+# Show next T4 issue (highest priority)
+desloppify next --tier 4
+
+# Show next issue from any tier (default: starts with highest)
+desloppify next
+```
+
+### Priority Sorting
+
+Within a tier, issues are sorted by:
+1. **Score impact** (estimated improvement from fixing)
+2. **Confidence** (high > medium > low)
+3. **LOC** (larger issues first, for file-based detectors)
+
+```python
+# Simplified priority logic
+if tier_a != tier_b:
+    return tier_b - tier_a  # Higher tier first
+if impact_a != impact_b:
+    return impact_b - impact_a  # Higher impact first
+return confidence_weight_b - confidence_weight_a
+```
+
+## Tier Flags in Findings
+
+Each finding includes tier metadata:
+
+```json
+{
+  "id": "unused_import_src_utils_helpers_ts_123",
+  "detector": "unused",
+  "file": "src/utils/helpers.ts",
+  "line": 123,
+  "status": "open",
+  "confidence": "high",
+  "tier": 3,
+  "dimension": "Code quality"
+}
+```
+
+This allows:
+- Filtering by tier in `show` command: `desloppify show --tier 4`
+- Building tier-specific work queues
+- Tier-aware score impact estimation
+
+## Tier Strategy for Agents
+
+Recommended tier strategy:
+
+<Steps>
+  <Step title="Start with T4">
+    Fix high-impact architectural issues first. These have 4× weight and unlock bigger score gains.
+    
+    ```bash
+    desloppify next --tier 4
+    ```
+  </Step>
+  
+  <Step title="Move to T3">
+    Address judgment-based issues. These often reveal deeper patterns worth refactoring.
+    
+    ```bash
+    desloppify next --tier 3
+    ```
+  </Step>
+  
+  <Step title="Batch T2/T1">
+    Once major issues are resolved, batch quick fixes and auto-fixes for final polish.
+    
+    ```bash
+    desloppify fix unused --dry-run
+    desloppify fix unused
+    ```
+  </Step>
+  
+  <Step title="Validate with Strict Score">
+    Check that strict score improved. If not, you may have just reshuffled issues.
+    
+    ```bash
+    desloppify status
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Don't skip T4 issues to inflate quick wins. The tier weighting system ensures T4 fixes have proportionally greater impact.
+</Tip>
+
+## Example: Score Impact by Tier
+
+Assuming similar detector potential and finding counts:
+
+```python
+# Hypothetical dimension with 100 potential checks
+total_checks = 100
+
+# Fixing 1 T1 issue (weight 1)
+weighted_failures_before = 10.0
+weighted_failures_after = 9.0  # -1
+impact_t1 = (100 - 9) / 100 - (100 - 10) / 100 = 0.01 = +1.0 point
+
+# Fixing 1 T4 issue (weight 4)
+weighted_failures_before = 10.0
+weighted_failures_after = 6.0  # -4
+impact_t4 = (100 - 6) / 100 - (100 - 10) / 100 = 0.04 = +4.0 points
+```
+
+**Note**: Actual impact depends on dimension weights, sample dampening, and mechanical/subjective pool fractions.
+
+## Tier Fallback
+
+By default, `next` falls back to lower tiers if no issues exist at the requested tier:
+
+```bash
+# Request T4, fall back to T3/T2/T1 if empty
+desloppify next --tier 4
+
+# Strict mode: only show T4, no fallback
+desloppify next --tier 4 --no-tier-fallback
+```
+
+## Related Concepts
+
+- [Detectors](/concepts/detectors) - How detectors map to tiers
+- [Scoring](/concepts/scoring) - How tier weights affect scores
+- [Workflow](/concepts/workflow) - Using tiers in the fix loop

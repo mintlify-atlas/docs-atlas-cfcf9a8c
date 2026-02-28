@@ -1,0 +1,331 @@
+---
+title: review
+description: Run LLM-powered subjective code review to assess design quality
+icon: microscope
+---
+
+The `review` command orchestrates LLM-powered subjective assessment of your codebase. It evaluates design quality, architecture, naming, and other subjective dimensions that mechanical detectors can't catch.
+
+## Usage
+
+```bash
+# Prepare review packet
+desloppify review --prepare
+
+# Run batch review with local LLM
+desloppify review --run-batches --runner codex
+
+# Import review results
+desloppify review --import results.json
+
+# External review (Claude cloud)
+desloppify review --external-start --external-runner claude
+desloppify review --external-submit --session-id <id> --import results.json
+```
+
+## Modes
+
+The review command has four main modes:
+
+### 1. Prepare (`--prepare`)
+
+Generates a review packet (`query.json`) with code context for LLM review.
+
+```bash
+desloppify review --prepare
+```
+
+**Options:**
+- `--holistic` - Include holistic review in addition to investigation batches
+- `--retrospective` - Include historical issue status/notes to distinguish root causes from symptom repeats
+
+**Output:**
+```
+  Generated review packet: .desloppify/review/query.json
+  
+  Includes:
+    - 24 investigation batches
+    - 3 holistic review dimensions
+    - Context: 142 files, 8,451 LOC
+```
+
+### 2. Run Batches (`--run-batches`)
+
+Execute review batches using a local LLM runner.
+
+```bash
+desloppify review --run-batches --runner codex --parallel
+```
+
+**Options:**
+- `--runner <name>` - LLM runner to use (`codex`, `claude-local`, custom)
+- `--parallel` - Run batches in parallel (faster)
+- `--scan-after-import` - Automatically rescan after importing results
+- `--retrospective` - Include issue history in context
+- `--run-log-file <path>` - Custom path for run log
+
+**Output:**
+```
+  Running 24 review batches with codex (parallel)
+  Estimated time: 8-12 minutes
+  
+  Live log: .desloppify/subagents/runs/2024-02-28-183045/run.log
+  
+  [=====>                    ] 5/24 batches complete (21%)
+  
+  Batch results: .desloppify/subagents/runs/2024-02-28-183045/merged.json
+  ✓ Imported 127 findings
+  Score: 87.3 → 84.1 (-3.2, subjective assessment complete)
+```
+
+### 3. Import (`--import`)
+
+Import review results from a JSON file.
+
+```bash
+desloppify review --import results.json
+```
+
+**Options:**
+- `--allow-partial` - Accept skipped/invalid findings (normally fails closed)
+- `--scan-after-import` - Rescan after importing
+
+**Import Guardrails:**
+
+Review imports are fail-closed by default. Findings must:
+- Match the schema exactly (dimension, identifier, summary, evidence, suggestion, confidence)
+- Have score-feedback consistency (scores below 85 require findings, below 100 require feedback)
+- Pass validation (correct dimension names, valid file paths, etc.)
+
+<Warning>
+Use `--allow-partial` only when you explicitly want to accept skipped findings. The default fail-closed behavior prevents corrupted reviews from polluting your state.
+</Warning>
+
+### 4. External Review
+
+For cloud-based LLMs (Claude, etc.) that can't run locally:
+
+#### Start External Session
+
+```bash
+desloppify review --external-start --external-runner claude
+```
+
+**Output:**
+```
+  External review session started
+  
+  Session ID: ext-2024-02-28-abc123
+  Template: .desloppify/review/external-template.md
+  
+  Instructions:
+  1. Open Claude with the generated template
+  2. Let Claude complete the review
+  3. Copy the JSON output to results.json
+  4. Submit: desloppify review --external-submit --session-id ext-2024-02-28-abc123 --import results.json
+```
+
+#### Submit External Results
+
+```bash
+desloppify review --external-submit --session-id ext-2024-02-28-abc123 --import results.json
+```
+
+This injects canonical provenance metadata and imports the results.
+
+## Review Dimensions
+
+The subjective review assesses these dimensions:
+
+1. **Naming** - Identifiers, types, module names
+2. **Abstraction** - Single responsibility, proper boundaries
+3. **Duplication** - Near-duplicates that detectors missed
+4. **Architecture** - Module organization, dependency flow
+5. **Error Handling** - Consistent patterns, proper propagation
+6. **Complexity** - Cognitive load, nesting depth
+7. **Testing** - Coverage, test quality
+8. **Documentation** - Comments, docstrings, READMEs
+
+Each dimension is scored 0-100 with findings to back up low scores.
+
+## Blind Review Protocol
+
+Reviews are conducted **blind** - the LLM doesn't see your existing score or mechanical findings. This prevents anchoring bias and ensures independent assessment.
+
+After import, the system:
+1. Validates score-feedback consistency
+2. Merges with mechanical findings
+3. Deduplicates overlapping issues
+4. Updates the overall score
+
+## Investigation Batches
+
+The review system creates focused investigation batches:
+
+- **File-level** - Review individual files in detail
+- **Directory-level** - Review module structure and cohesion
+- **Cross-cutting** - Review patterns across the codebase
+
+Each batch includes:
+- Target scope (files/directories)
+- Relevant code context
+- Dimension focus (naming, architecture, etc.)
+- Historical context (if `--retrospective` enabled)
+
+## Holistic Review
+
+With `--holistic`, the system includes high-level architecture reviews:
+
+```bash
+desloppify review --prepare --holistic
+```
+
+Holistic reviews assess:
+- Overall architecture patterns
+- Module boundaries
+- Dependency organization
+- Cross-cutting concerns
+
+## Runtime Logs
+
+Review batches write live logs:
+
+```
+.desloppify/subagents/runs/<timestamp>/
+├── run.log                  # Overall run log
+├── logs/
+│   ├── batch-001.log       # Individual batch logs
+│   ├── batch-002.log
+│   └── ...
+└── merged.json             # Final merged results
+```
+
+Monitor long-running reviews:
+
+```bash
+tail -f .desloppify/subagents/runs/*/run.log
+```
+
+## Validation Mode
+
+Validate a review file without importing:
+
+```bash
+desloppify review --validate-import results.json
+```
+
+This checks the file against all import guardrails without modifying state.
+
+## Examples
+
+### Full Review Workflow (Local LLM)
+
+```bash
+# 1. Prepare review packet
+desloppify review --prepare --holistic --retrospective
+
+# 2. Run batches
+desloppify review --run-batches --runner codex --parallel --scan-after-import
+
+# Results automatically imported and state updated
+```
+
+### External Review Workflow (Claude)
+
+```bash
+# 1. Prepare and start external session
+desloppify review --prepare
+desloppify review --external-start --external-runner claude
+
+# 2. Follow instructions to complete review in Claude
+
+# 3. Submit results
+desloppify review --external-submit --session-id <id> --import results.json
+```
+
+### Import Pre-Generated Results
+
+```bash
+# Validate first
+desloppify review --validate-import results.json
+
+# Import if valid
+desloppify review --import results.json --scan-after-import
+```
+
+## Configuration
+
+Configure review behavior in `.desloppify/config.json`:
+
+```json
+{
+  "review_staleness_days": 30,
+  "review_batch_size": 5,
+  "review_dimensions": ["naming", "abstraction", "architecture"]
+}
+```
+
+See [project-config](/configuration/project-config) for all options.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Run reviews periodically">
+    Re-run subjective reviews every few weeks as the codebase evolves. Use `--retrospective` to avoid re-flagging resolved issues.
+  </Accordion>
+
+  <Accordion title="Use --holistic for big picture">
+    Holistic reviews catch architectural issues that file-level reviews miss.
+  </Accordion>
+
+  <Accordion title="Validate before importing">
+    Always validate external review results before importing to catch schema issues.
+  </Accordion>
+
+  <Accordion title="Monitor parallel runs">
+    Watch the live log during `--parallel` batch runs to catch any issues early.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Import Fails (Fail-Closed)
+
+```
+Error: Import aborted - 3 findings invalid
+```
+
+**Solution:** Use `--validate-import` to see which findings are invalid. Fix the JSON and re-import.
+
+### Score-Feedback Inconsistency
+
+```
+Error: Dimension 'naming' scored 78 but no findings provided
+```
+
+**Solution:** Scores below 85 require at least one finding. Add findings or increase the score.
+
+### Missing Session ID
+
+```
+Error: --external-submit requires --session-id
+```
+
+**Solution:** Copy the session ID from the `--external-start` output.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="status" icon="gauge" href="/commands/status">
+    View subjective dimension scores
+  </Card>
+  <Card title="scan" icon="radar" href="/commands/scan">
+    Run mechanical detectors
+  </Card>
+  <Card title="next" icon="arrow-right" href="/commands/next">
+    Get subjective findings to address
+  </Card>
+  <Card title="Advanced: Review System" icon="book" href="/advanced/review-system">
+    Deep dive into review architecture
+  </Card>
+</CardGroup>

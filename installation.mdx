@@ -1,0 +1,137 @@
+---
+title: Installation
+description: Install Desloppify on your system using pip or pipx
+---
+
+# Installation
+
+Desloppify is a Python CLI tool that requires Python 3.11 or higher.
+
+## Prerequisites
+
+Before installing Desloppify, ensure you have:
+
+- Python 3.11, 3.12, or 3.13 installed
+- pip or pipx package manager
+
+<Info>
+  Check your Python version with `python --version` or `python3 --version`
+</Info>
+
+## Install Desloppify
+
+<Steps>
+  <Step title="Choose your installation method">
+    You can install Desloppify using pip or pipx. We recommend installing with the `[full]` extra to get all optional features.
+
+    <CodeGroup>
+      ```bash pip
+      pip install --upgrade "desloppify[full]"
+      ```
+
+      ```bash pipx
+      pipx install "desloppify[full]"
+      ```
+    </CodeGroup>
+
+    <Note>
+      The `[full]` extra installs tree-sitter language packs, bandit for Python security checks, and Pillow for scorecard badge generation.
+    </Note>
+  </Step>
+
+  <Step title="Verify the installation">
+    Confirm that Desloppify is installed correctly:
+
+    ```bash
+    desloppify --help
+    ```
+
+    You should see the list of available commands.
+  </Step>
+
+  <Step title="Install the agent workflow guide (optional)">
+    If you're using an AI coding agent, install the appropriate skill/workflow guide:
+
+    <CodeGroup>
+      ```bash Claude
+      desloppify update-skill claude
+      ```
+
+      ```bash Cursor
+      desloppify update-skill cursor
+      ```
+
+      ```bash GitHub Copilot
+      desloppify update-skill copilot
+      ```
+
+      ```bash Windsurf
+      desloppify update-skill windsurf
+      ```
+
+      ```bash Gemini
+      desloppify update-skill gemini
+      ```
+    </CodeGroup>
+
+    <Tip>
+      The workflow guide helps your AI agent understand how to use Desloppify effectively for systematic code improvement.
+    </Tip>
+  </Step>
+</Steps>
+
+## Installation options
+
+### Minimal installation
+
+If you don't need all features, you can install just the core:
+
+```bash
+pip install desloppify
+```
+
+### Optional extras
+
+You can install individual optional features:
+
+<CodeGroup>
+  ```bash Tree-sitter support
+  pip install "desloppify[treesitter]"
+  ```
+
+  ```bash Python security checks
+  pip install "desloppify[python-security]"
+  ```
+
+  ```bash Scorecard generation
+  pip install "desloppify[scorecard]"
+  ```
+
+  ```bash All features
+  pip install "desloppify[full]"
+  ```
+</CodeGroup>
+
+<Info>
+  If optional tools are missing, Desloppify will warn during scans and mark score confidence as reduced for affected detectors.
+</Info>
+
+## Upgrade
+
+To upgrade to the latest version:
+
+<CodeGroup>
+  ```bash pip
+  pip install --upgrade "desloppify[full]"
+  ```
+
+  ```bash pipx
+  pipx upgrade desloppify
+  ```
+</CodeGroup>
+
+## Next steps
+
+<Card title="Quick start" icon="rocket" href="/quickstart">
+  Ready to scan your first codebase? Follow the quick start guide.
+</Card>

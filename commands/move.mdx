@@ -1,0 +1,244 @@
+---
+title: move
+description: Move files or directories and automatically update all import references
+icon: arrows-up-down-left-right
+---
+
+The `move` command safely refactors your codebase by moving files or directories while automatically updating all import statements and references across your project.
+
+## Usage
+
+```bash
+desloppify move <source> <dest> [options]
+```
+
+## Arguments
+
+<ParamField path="source" type="string" required>
+  Path to the file or directory to move (relative to project root).
+</ParamField>
+
+<ParamField path="dest" type="string" required>
+  Destination path. Can be a directory (to move into) or a full path (to rename).
+</ParamField>
+
+## Options
+
+<ParamField path="--dry-run" type="boolean">
+  Preview changes without modifying files. Shows the move plan and all import updates.
+</ParamField>
+
+<ParamField path="--lang" type="string">
+  Force language detection. Auto-detected by file extension if not specified.
+</ParamField>
+
+<ParamField path="--path" type="string">
+  Project root path (defaults to current directory).
+</ParamField>
+
+## How It Works
+
+The move command:
+
+1. **Analyzes dependencies** - Builds a dependency graph to find all files that import the source
+2. **Plans changes** - Computes replacement patterns for all import statements
+3. **Updates imports** - Modifies import statements in files that reference the moved file
+4. **Updates self-imports** - Fixes relative imports within the moved file itself
+5. **Moves the file** - Physically moves the file to the new location
+
+## Examples
+
+### Move a single file
+
+```bash
+desloppify move src/utils/old-name.ts src/utils/new-name.ts
+```
+
+**Output:**
+```
+  Moving: src/utils/old-name.ts → src/utils/new-name.ts
+
+  Import updates in 8 files:
+    src/components/Button.tsx
+      - import { helper } from '../utils/old-name'
+      + import { helper } from '../utils/new-name'
+
+    src/services/api.ts
+      - import { helper } from './utils/old-name'
+      + import { helper } from './utils/new-name'
+
+    ... (6 more files)
+
+  Self-import updates: 2 changes
+
+  ✓ Done.
+  Run `npm run typecheck` to verify.
+```
+
+### Move file to different directory
+
+```bash
+desloppify move src/components/Button.tsx src/ui/Button.tsx
+```
+
+### Preview with dry run
+
+```bash
+desloppify move src/utils/helper.ts src/lib/helper.ts --dry-run
+```
+
+**Output:**
+```
+  Moving: src/utils/helper.ts → src/lib/helper.ts
+
+  Import updates in 12 files:
+    ... (shows all planned changes)
+
+  [Dry run — no files modified]
+```
+
+### Move entire directory
+
+```bash
+desloppify move src/utils src/lib/utils
+```
+
+This moves the entire directory and updates all imports that reference files within it.
+
+## Language Support
+
+The move command currently supports:
+
+- **TypeScript** - Full support with ES6 imports and require()
+- **Python** - Full support with import statements and from...import
+- **C#** - Support for using statements and namespace references
+
+<Info>
+Other languages may have basic support. Use `--dry-run` first to preview changes.
+</Info>
+
+## Move Plan Output
+
+The move plan shows:
+
+1. **Source → Destination** - The file being moved
+2. **Import updates** - Files that import the source and need updating
+3. **Self-import updates** - Relative imports within the moved file
+4. **Verification command** - Language-specific command to verify the refactor
+
+### Example Plan
+
+```
+Moving: src/services/auth/login.ts → src/auth/login.ts
+
+Import updates in 15 files:
+  src/app.ts
+    - import { login } from './services/auth/login'
+    + import { login } from './auth/login'
+
+  src/middleware/auth.ts
+    - import { login } from '../services/auth/login'
+    + import { login } from '../auth/login'
+
+Self-import updates: 3 changes
+  src/auth/login.ts (moved)
+    - import { validate } from '../utils/validation'
+    + import { validate } from '../utils/validation'
+```
+
+## Safety Features
+
+<Warning>
+Always commit your changes before running `move` without `--dry-run`. This allows you to review and revert if needed.
+</Warning>
+
+### Dry Run First
+
+Always preview changes with `--dry-run`:
+
+```bash
+desloppify move src/old.ts src/new.ts --dry-run
+```
+
+### Verify After Moving
+
+After moving, run your language's type checker:
+
+```bash
+# TypeScript
+npm run typecheck
+
+# Python
+mypy src/
+
+# C#
+dotnet build
+```
+
+## Error Handling
+
+### Destination Already Exists
+
+```bash
+$ desloppify move src/a.ts src/b.ts
+  Error: Destination already exists: src/b.ts
+```
+
+Solution: Choose a different destination or remove the existing file first.
+
+### Cannot Detect Language
+
+```bash
+$ desloppify move src/unknown.xyz src/new.xyz
+  Error: Cannot detect language. Use --lang or ensure file has a supported extension.
+```
+
+Solution: Specify `--lang` explicitly or rename to a supported extension.
+
+### Source Not Found
+
+```bash
+$ desloppify move src/missing.ts src/new.ts
+  Error: Source not found: src/missing.ts
+```
+
+Solution: Check the source path is correct.
+
+## Directory Moves
+
+Moving directories works similarly to file moves:
+
+```bash
+desloppify move src/components/old-feature src/features/new-feature
+```
+
+All files within the directory are moved, and all imports are updated to reflect the new structure.
+
+## Integration with Plan
+
+After moving files, update your plan if you had clustered related changes:
+
+```bash
+# Move the file
+desloppify move src/old.ts src/new.ts
+
+# Update plan to reflect the move
+desloppify plan done move-refactor --attest "Moved and updated imports"
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="scan" icon="radar" href="/commands/scan">
+    Rescan after moving to update findings
+  </Card>
+  <Card title="tree" icon="sitemap" href="/commands/tree">
+    View codebase structure before planning moves
+  </Card>
+  <Card title="plan" icon="list-check" href="/commands/plan">
+    Organize refactoring tasks
+  </Card>
+  <Card title="fix" icon="wrench" href="/commands/fix">
+    Auto-fix remaining issues after move
+  </Card>
+</CardGroup>

@@ -1,0 +1,221 @@
+---
+title: detect
+description: Run a single detector directly (bypass state tracking)
+---
+
+The `detect` command runs a specific detector on your codebase without updating the persistent state. This is useful for quick exploration, testing detector behavior, or inspecting specific issue types.
+
+## Usage
+
+```bash
+desloppify detect DETECTOR [OPTIONS]
+```
+
+## Arguments
+
+### `DETECTOR` (required)
+
+The name of the detector to run. Available detectors depend on your language.
+
+Common detectors:
+- `unused` - Unused imports, variables, functions
+- `smells` - Code smells and anti-patterns
+- `large` - Large files/functions
+- `dupes` - Duplicate code detection
+- `security` - Security vulnerabilities
+- `deps` - Dependency analysis
+- `logs` - Logging issues
+
+Run `desloppify detect <detector> --help` to see detector-specific options.
+
+## Options
+
+### `--lang LANGUAGE`
+
+Specify the language to scan. Auto-detected if omitted.
+
+```bash
+desloppify detect unused --lang python
+```
+
+### `--path PATH`
+
+Project root directory to scan.
+
+**Default:** Auto-detected from language configuration
+
+```bash
+desloppify detect unused --path ./src
+```
+
+### `--top N`
+
+Maximum number of items to display.
+
+**Default:** `20`
+
+```bash
+desloppify detect smells --top 50
+```
+
+### `--json`
+
+Output results as JSON instead of human-readable format.
+
+```bash
+desloppify detect unused --json > unused.json
+```
+
+### `--threshold VALUE`
+
+Threshold value for detectors that support it:
+- **`large`**: LOC threshold (default: language-specific)
+- **`dupes`**: Similarity threshold 0-1 (default: 0.8)
+
+```bash
+desloppify detect large --threshold 300
+desloppify detect dupes --threshold 0.9
+```
+
+### `--category CATEGORY`
+
+Filter unused code by category (for `unused` detector only).
+
+**Choices:** `imports`, `vars`, `params`, `all`
+
+**Default:** `all`
+
+```bash
+desloppify detect unused --category imports
+```
+
+### `--file FILE`
+
+Show dependencies for a specific file (for `deps` detector only).
+
+```bash
+desloppify detect deps --file src/utils/api.ts
+```
+
+### `--fix`
+
+Auto-fix detected issues (available for `logs` detector).
+
+```bash
+desloppify detect logs --fix
+```
+
+### `--lang-opt KEY=VALUE`
+
+Language runtime option override. Repeatable.
+
+```bash
+desloppify detect unused --lang-opt roslyn_cmd='dotnet run ...'
+```
+
+## Examples
+
+### Run unused code detector
+
+```bash
+desloppify detect unused
+```
+
+### Find large files over 500 lines
+
+```bash
+desloppify detect large --threshold 500
+```
+
+### Detect code duplication with high similarity
+
+```bash
+desloppify detect dupes --threshold 0.95
+```
+
+### Show only unused imports
+
+```bash
+desloppify detect unused --category imports
+```
+
+### Export security findings as JSON
+
+```bash
+desloppify detect security --json > security-report.json
+```
+
+### Analyze dependencies for a file
+
+```bash
+desloppify detect deps --file src/components/App.tsx
+```
+
+### Auto-fix logging issues
+
+```bash
+desloppify detect logs --fix
+```
+
+## Output
+
+The command displays:
+- **Finding count** by type
+- **File paths** with issue locations
+- **Issue descriptions** and summaries
+- **Code context** (for some detectors)
+- **Suggested next command** (`desloppify scan`)
+
+### JSON Output Format
+
+With `--json`, output includes:
+```json
+{
+  "findings": [
+    {
+      "file": "src/utils/helper.ts",
+      "line": 42,
+      "summary": "Unused import: lodash",
+      "detector": "unused",
+      "category": "imports"
+    }
+  ],
+  "total": 15,
+  "detector": "unused"
+}
+```
+
+## Differences from `scan`
+
+The `detect` command:
+- **Does not** update persistent state
+- **Does not** track finding history
+- **Does not** affect scores
+- Runs a **single detector** only
+- Useful for **exploration** and **testing**
+
+For production workflows, use [`scan`](/commands/scan) to track findings over time.
+
+## Default Thresholds
+
+Some detectors have language-specific default thresholds:
+- **`large`**: Uses `large_threshold` from language config
+- **`dupes`**: Uses 0.8 similarity by default
+
+You can override these with `--threshold`.
+
+## Next Steps
+
+After running `detect`, the command suggests:
+
+```bash
+Next command: `desloppify scan --path .`
+```
+
+This runs a full scan to track findings in state.
+
+## Related Commands
+
+- [`scan`](/commands/scan) - Run all detectors and update state
+- [`show`](/commands/show) - View findings from state
+- [`langs`](/commands/langs) - List available language plugins

@@ -1,0 +1,325 @@
+---
+title: 'Subjective Scoring'
+description: 'Import guardrails, assessment validation, and anti-gaming rules'
+---
+
+## Overview
+
+Subjective scoring evaluates code quality aspects that resist mechanical detection — naming clarity, abstraction quality, module boundaries. The scoring system enforces **consistency rules** to prevent score inflation and ensure feedback matches assessments.
+
+**Core principle**: Scores are claims. Claims require evidence. The import system validates evidence before accepting scores.
+
+## Assessment Structure
+
+Each subjective assessment includes:
+
+```json
+{
+  "dimension": "naming",
+  "score": 92.5,
+  "confidence": "high",
+  "feedback": {
+    "summary": "Naming is generally clear with minor inconsistencies",
+    "evidence": [
+      "Component names follow React conventions",
+      "Some utility functions use abbreviations (e.g., 'fmt', 'proc')"
+    ],
+    "suggestion": "Expand abbreviated names in utility modules"
+  },
+  "assessed_at": "2026-02-28T10:30:00Z",
+  "source": "holistic"
+}
+```
+
+**Required fields**:
+- `dimension`: Must match allowed dimension name (normalized)
+- `score`: 0-100 float
+- `confidence`: "high", "medium", or "low"
+- `feedback`: Must be present and non-empty when score < 100
+
+<Note>
+Placeholder assessments (0% score, no evidence) are used to track unassessed dimensions. They don't contribute to scoring until replaced with real assessments.
+</Note>
+
+## Import Guardrails
+
+The import system enforces strict validation rules to maintain score integrity.
+
+### 1. Schema Validation
+
+**Finding schema** (from `query.json` system prompt):
+
+```typescript
+{
+  dimension: string,        // Must match packet dimensions
+  identifier: string,       // Unique per finding
+  summary: string,          // Short description
+  related_files: string[],  // File paths
+  evidence: string[],       // Observed patterns
+  suggestion: string,       // How to fix
+  confidence: 'high' | 'medium' | 'low'
+}
+```
+
+**Validation rules**:
+- All required fields must be present and non-empty
+- `dimension` must be in the packet's allowed dimension set
+- `related_files` must contain valid file paths (checked against reviewed files)
+- `confidence` must be a recognized level
+
+Invalid findings are **skipped**. By default, any skipped finding aborts the entire import (fail-closed).
+
+### 2. Score-Feedback Consistency
+
+Assessments must satisfy:
+
+<Steps>
+  <Step title="Universal rule">
+    Scores < 100.0 require explicit same-dimension feedback:
+    - Finding with `suggestion`, OR
+    - `dimension_notes` with `evidence` array
+
+    **Rationale**: If something isn't perfect, explain what's wrong.
+  </Step>
+  <Step title="Low-score rule">
+    Scores < 85.0 require at least one same-dimension finding.
+
+    **Rationale**: A score that low claims significant issues exist. Show them.
+  </Step>
+  <Step title="High-score rule">
+    Scores ≥ 95.0 with multiple findings trigger a warning (not a block).
+
+    **Rationale**: Either the score is too generous, or the issues aren't that bad.
+  </Step>
+</Steps>
+
+**Implementation** (`desloppify/intelligence/review/importing/holistic.py`):
+
+```python
+if score < 100.0:
+    # Must have dimension_notes evidence OR findings with suggestions
+    if not dimension_notes_evidence and not same_dim_suggestion_count:
+        return False  # Consistency check fails
+
+if score < 85.0:
+    # Must have at least one finding
+    if same_dim_finding_count == 0:
+        return False
+```
+
+### 3. Fail-Closed Import
+
+By default, `desloppify review --import` aborts on validation errors:
+
+```bash
+# This fails if any finding is invalid
+desloppify review --import findings.json
+
+# Error output:
+#   Error: import produced skipped finding(s); refusing partial import.
+#     #3 (naming::abbreviations): missing required field 'suggestion'
+#   Fix the payload and retry, or pass --allow-partial to override.
+```
+
+**Override** (use sparingly):
+
+```bash
+desloppify review --import findings.json --allow-partial
+```
+
+This imports valid findings and skips invalid ones. Use when:
+- External reviewer produced mostly-good output with a few malformed entries
+- You've manually verified the skipped findings aren't critical
+- You'll re-run review to fill gaps
+
+<Warning>
+Partial imports reduce dimension coverage. The system warns you which dimensions are missing and provides a rerun command.
+</Warning>
+
+## Assessment Sources
+
+Assessments carry provenance metadata:
+
+<Tabs>
+  <Tab title="Trusted Internal">
+    ```json
+    {
+      "source": "holistic",
+      "trusted": true,
+      "assessed_at": "2026-02-28T10:30:00Z",
+      "provenance": {
+        "runner": "codex",
+        "session": "run-20260228-103000",
+        "batches": [1, 2, 3]
+      }
+    }
+    ```
+
+    **Created by**: `review --run-batches --runner codex`
+
+    **Characteristics**:
+    - Full blind review protocol
+    - Batch isolation
+    - Merge validation
+    - Persistent (doesn't expire)
+  </Tab>
+  <Tab title="Attested External">
+    ```json
+    {
+      "source": "attested_external",
+      "trusted": true,
+      "assessed_at": "2026-02-28T11:00:00Z",
+      "attestation": {
+        "session_id": "claude-abc123",
+        "submitted_by": "user@example.com",
+        "canonical_provenance": "injected by CLI"
+      }
+    }
+    ```
+
+    **Created by**: `review --external-start --external-runner claude`, then `--external-submit`
+
+    **Characteristics**:
+    - Cloud runner (Claude Projects, cursor Composer)
+    - CLI injects provenance after manual session
+    - Trusted (same validation as internal)
+    - Persistent
+  </Tab>
+  <Tab title="Manual Override">
+    ```json
+    {
+      "source": "manual_override",
+      "trusted": false,
+      "assessed_at": "2026-02-28T12:00:00Z",
+      "provisional_override": true,
+      "provisional_until_scan": 42,
+      "attest": "Emergency fix for demo — will rerun proper review after"
+    }
+    ```
+
+    **Created by**: `review --import findings.json --manual-override --attest "reason"`
+
+    **Characteristics**:
+    - Skips blind review
+    - Marked provisional
+    - **Expires on next scan** unless replaced
+    - Requires explicit attestation
+  </Tab>
+</Tabs>
+
+### Provisional Expiration
+
+Manual override assessments reset when `scan_count` increments:
+
+```python
+# From import_cmd.py:79
+def _mark_manual_override_assessments_provisional(
+    state: dict,
+    assessment_keys: set[str],
+) -> int:
+    """Mark imported manual override assessments as provisional until next scan."""
+    now = utc_now()
+    expires_scan = int(state.get("scan_count", 0) or 0) + 1
+    marked = 0
+    for key in sorted(assessment_keys):
+        payload = store.get(key)
+        payload["source"] = "manual_override"
+        payload["provisional_override"] = True
+        payload["provisional_until_scan"] = expires_scan
+        marked += 1
+    return marked
+```
+
+**Why expiration?** Manual overrides bypass validation. They're emergency tools, not substitutes for real review. Expiration forces the agent to run proper review eventually.
+
+## Dimension Coverage
+
+Each language has a default set of **scored dimensions** that contribute to the overall subjective score.
+
+**Coverage tracking**:
+
+```bash
+# From batches.py:824
+missing_after_import = _print_import_dimension_coverage_notice(
+    assessed_dims=merged_assessment_dims,
+    scored_dims=scored_dimensions,
+    scan_path=scan_path,
+    colorize_fn=colorize_fn,
+)
+
+# Output:
+#   Coverage gap: imported assessments for 4/6 scored subjective dimensions.
+#   Still missing: error_handling, testability
+#   Run to cover missing dimensions: `desloppify review --run-batches --runner codex --parallel --scan-after-import --dimensions error_handling,testability`
+```
+
+Incomplete coverage results in:
+- Lower subjective score (missing dimensions count as 0)
+- Warning banner in scan output
+- Suggested rerun command with `--dimensions`
+
+<Tip>
+Use `--dimensions` to focus on specific aspects:
+
+```bash
+# Only assess naming and abstractions
+desloppify review --prepare --dimensions naming,abstractions
+desloppify review --run-batches --runner codex --parallel --scan-after-import
+```
+</Tip>
+
+## Review Quality Metrics
+
+After merge, the system computes quality indicators:
+
+```json
+{
+  "review_quality": {
+    "dimension_coverage": 1.0,          // 6/6 dimensions assessed
+    "evidence_density": 3.2,            // Avg 3.2 evidence items per finding
+    "finding_pressure": 2.5,            // Avg 2.5 findings per dimension
+    "dimensions_with_findings": 4,      // 4 dims have issues
+    "high_score_missing_issue_note": 0  // 0 dims scored >95 with 0 findings
+  }
+}
+```
+
+**Interpretation**:
+- **Low evidence density** (< 2.0): Findings lack detail, may be superficial
+- **High finding pressure** (> 5.0): Possible review fatigue, may be nitpicking
+- **High score missing issue note** (> 2): Score-feedback inconsistency detected
+
+## Validation Workflow
+
+**Validate import without mutating state**:
+
+```bash
+desloppify review --validate-import findings.json
+
+# Output:
+#   Import payload validation passed.
+#   Findings parsed: 23
+#   Assessment entries in payload: 6
+#   No state changes were made (--validate-import).
+```
+
+Use this to check external reviewer output before committing to import.
+
+## Code References
+
+- Import validation: `desloppify/app/commands/review/import_cmd.py`
+- Score-feedback consistency: `desloppify/intelligence/review/importing/holistic.py:200-250`
+- Guardrail policy: `desloppify/intelligence/review/importing/contracts.py`
+- Coverage tracking: `desloppify/app/commands/review/batches.py:260-296`
+- Provisional expiration: `desloppify/app/commands/review/import_cmd.py:79-104`
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="Review System" icon="microscope" href="/advanced/review-system">
+    How subjective review works end-to-end
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    System design and data flow
+  </Card>
+</CardGroup>

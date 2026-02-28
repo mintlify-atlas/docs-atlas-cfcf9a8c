@@ -1,122 +1,129 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Desloppify",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#6366F1",
+    "light": "#818CF8",
+    "dark": "#4F46E5"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/peteromallet/desloppify"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/peteromallet/desloppify"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/scoring",
+              "concepts/detectors",
+              "concepts/tiers",
+              "concepts/workflow"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Language Support",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "languages/overview",
+              "languages/full-plugins",
+              "languages/generic-plugins",
+              "languages/adding-languages"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/project-config",
+              "configuration/environment-variables",
+              "configuration/exclusions"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/review-system",
+              "advanced/subjective-scoring",
+              "advanced/zones",
+              "advanced/architecture"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "integration/ci-cd",
+              "integration/agents",
+              "integration/workflows"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Commands",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Commands",
             "pages": [
-              "api-reference/introduction"
+              "commands/scan",
+              "commands/status",
+              "commands/next",
+              "commands/resolve"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Analysis",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "commands/show",
+              "commands/detect",
+              "commands/plan",
+              "commands/tree",
+              "commands/viz"
+            ]
+          },
+          {
+            "group": "Actions",
+            "pages": [
+              "commands/fix",
+              "commands/move",
+              "commands/review"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "commands/config",
+              "commands/zone",
+              "commands/exclude",
+              "commands/update-skill"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "commands/dev",
+              "commands/langs"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

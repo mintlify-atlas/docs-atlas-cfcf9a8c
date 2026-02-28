@@ -1,0 +1,618 @@
+---
+title: Generic Language Plugins
+description: External tool integration with optional tree-sitter AST analysis for 22 languages
+---
+
+Generic plugins are single-file plugins (20-40 lines) that wrap external linters and optionally use tree-sitter for AST-powered analysis.
+
+## Architecture
+
+Generic plugins use the `generic_lang()` factory:
+
+```python
+from desloppify.languages._framework.generic import generic_lang
+from desloppify.languages._framework.treesitter import RUST_SPEC
+
+generic_lang(
+    name="rust",
+    extensions=[".rs"],
+    tools=[
+        {
+            "label": "cargo clippy",
+            "cmd": "cargo clippy --message-format=json 2>&1",
+            "fmt": "cargo",  # Output parser format
+            "id": "clippy_warning",  # Finding ID prefix
+            "tier": 2,  # Severity tier (1-3)
+            "fix_cmd": "cargo clippy --fix --allow-dirty",
+        },
+    ],
+    exclude=["target"],  # Directories to skip
+    depth="standard",  # Integration depth: minimal/shallow/standard
+    detect_markers=["Cargo.toml"],  # Project root markers
+    treesitter_spec=RUST_SPEC,  # Optional AST analysis
+)
+```
+
+## Tool Specifications
+
+Each tool spec defines how to run an external linter and parse its output:
+
+<ParamField path="label" type="string" required>
+  Human-readable tool name (e.g., `"rubocop"`, `"cargo clippy"`)
+</ParamField>
+
+<ParamField path="cmd" type="string" required>
+  Shell command to run the tool (executed from project root)
+</ParamField>
+
+<ParamField path="fmt" type="string" required>
+  Output format parser. Built-in parsers:
+  - `"json"` - Generic JSON with `file`, `line`, `message` keys
+  - `"gnu"` - GNU format: `file:line:col: message`
+  - `"cargo"` - Cargo JSON messages
+  - `"eslint"` - ESLint JSON output
+  - `"rubocop"` - RuboCop JSON
+  - `"golangci"` - golangci-lint JSON
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Finding ID prefix (e.g., `"clippy_warning"`, `"rubocop_offense"`)
+</ParamField>
+
+<ParamField path="tier" type="number" required>
+  Severity tier (1 = errors, 2 = warnings, 3 = style/info)
+</ParamField>
+
+<ParamField path="fix_cmd" type="string">
+  Optional auto-fix command (e.g., `"cargo clippy --fix"`)
+</ParamField>
+
+## Output Parsers
+
+Generic plugins parse tool output using format-specific parsers:
+
+<Tabs>
+  <Tab title="GNU Format">
+    Parses GNU-style messages: `file:line:col: message`
+
+    ```python
+    {
+        "label": "shellcheck",
+        "cmd": "shellcheck -f gcc *.sh",
+        "fmt": "gnu",
+        "id": "shellcheck_warning",
+        "tier": 2,
+    }
+    ```
+
+    **Example output**:
+    ```
+    script.sh:12:5: warning: Use $(...) instead of legacy `...`
+    script.sh:15:10: error: Variable is not assigned
+    ```
+  </Tab>
+
+  <Tab title="Cargo JSON">
+    Parses Cargo's `--message-format=json` output:
+
+    ```python
+    {
+        "label": "cargo clippy",
+        "cmd": "cargo clippy --message-format=json 2>&1",
+        "fmt": "cargo",
+        "id": "clippy_warning",
+        "tier": 2,
+    }
+    ```
+
+    **Example output**:
+    ```json
+    {
+      "reason": "compiler-message",
+      "message": {
+        "rendered": "warning: unused variable: `x`",
+        "spans": [{"file_name": "src/main.rs", "line_start": 10}]
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="ESLint JSON">
+    Parses ESLint's `--format=json` output:
+
+    ```python
+    {
+        "label": "eslint",
+        "cmd": "eslint --format=json .",
+        "fmt": "eslint",
+        "id": "eslint_violation",
+        "tier": 2,
+    }
+    ```
+
+    **Example output**:
+    ```json
+    [{
+      "filePath": "/path/to/file.js",
+      "messages": [
+        {"line": 15, "column": 10, "message": "Unexpected var", "ruleId": "no-var"}
+      ]
+    }]
+    ```
+  </Tab>
+
+  <Tab title="RuboCop JSON">
+    Parses RuboCop's `--format=json` output:
+
+    ```python
+    {
+        "label": "rubocop",
+        "cmd": "rubocop --format=json",
+        "fmt": "rubocop",
+        "id": "rubocop_offense",
+        "tier": 2,
+    }
+    ```
+
+    **Example output**:
+    ```json
+    {
+      "files": [{
+        "path": "lib/example.rb",
+        "offenses": [
+          {"location": {"line": 42}, "message": "Line is too long"}
+        ]
+      }]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Generic JSON">
+    Parses any JSON with `file`, `line`, `message` keys:
+
+    ```python
+    {
+        "label": "custom-linter",
+        "cmd": "custom-linter --json",
+        "fmt": "json",
+        "id": "custom_issue",
+        "tier": 2,
+    }
+    ```
+
+    **Example output**:
+    ```json
+    [
+      {"file": "src/main.py", "line": 10, "message": "Missing docstring"}
+    ]
+    ```
+  </Tab>
+</Tabs>
+
+## Tree-Sitter Integration
+
+When `tree-sitter-language-pack` is installed, generic plugins get AST-powered analysis:
+
+### What Tree-Sitter Provides
+
+<AccordionGroup>
+  <Accordion title="Function/Method Extraction">
+    Extract function definitions for duplicate detection:
+
+    ```rust
+    // Rust example
+    fn calculate_total(items: &[Item]) -> f64 {
+        items.iter().map(|i| i.price).sum()
+    }
+    // ↓ Extracted as FunctionInfo(name="calculate_total", start=10, end=12, ...)
+    ```
+
+    **Duplicate detection**: Compares function bodies across the codebase.
+  </Accordion>
+
+  <Accordion title="Import Parsing">
+    Build dependency graphs from import statements:
+
+    ```rust
+    use crate::models::User;
+    use crate::services::auth;
+    // ↓ Dependency edges: current_file → models/user.rs, services/auth.rs
+    ```
+
+    **Enables**:
+    - Coupling analysis (files with 10+ imports)
+    - Orphaned file detection (no incoming imports)
+    - Cycle detection (A → B → C → A)
+  </Accordion>
+
+  <Accordion title="AST Complexity Metrics">
+    Calculate code complexity from syntax tree:
+
+    - **Nesting depth**: Max indentation level (> 5 is a smell)
+    - **Cyclomatic complexity**: Number of decision points (> 15 is a smell)
+    - **Long functions**: Lines of code (> 50 is a smell)
+    - **Parameter count**: Number of params (> 5 is a smell)
+    - **Callback depth**: Nested closures/lambdas (> 3 is a smell)
+  </Accordion>
+
+  <Accordion title="God Class Detection">
+    Detect overly complex classes/structs:
+
+    ```rust
+    struct GodStruct {
+        // 15+ fields → god_class smell
+        // 20+ methods → god_class smell
+        // 500+ lines → god_class smell
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Responsibility Cohesion">
+    Detect disconnected function clusters:
+
+    ```python
+    # File with 2 unrelated groups of functions
+    # Group 1: user_login, user_logout, get_user
+    # Group 2: send_email, format_email
+    # ↓ Low cohesion score → mixed_concerns smell
+    ```
+  </Accordion>
+
+  <Accordion title="Unused Imports">
+    Find imports that are never referenced:
+
+    ```rust
+    use std::collections::HashMap;  // Never used → unused_import
+    use serde::{Serialize, Deserialize};  // Used → OK
+    ```
+  </Accordion>
+
+  <Accordion title="AST Smells">
+    Cross-language smell detection:
+
+    - **Empty catch blocks**: `try { ... } catch (e) {}`
+    - **Unreachable code**: Code after `return`/`break`
+    - **Magic numbers**: Hardcoded constants (e.g., `if score > 100`)
+  </Accordion>
+</AccordionGroup>
+
+### Tree-Sitter Language Specs
+
+Each language has a `TreeSitterLangSpec` defining AST queries:
+
+```python desloppify/languages/_framework/treesitter/_specs.py
+RUST_SPEC = TreeSitterLangSpec(
+    grammar="rust",  # Tree-sitter grammar name
+    function_query="""
+        (function_item
+            name: (identifier) @name
+            body: (block) @body) @func
+    """,
+    import_query="""
+        (use_declaration
+            argument: (_) @path) @import
+    """,
+    class_query="""
+        (struct_item
+            name: (type_identifier) @name
+            body: (field_declaration_list) @body) @class
+    """,
+    comment_node_types=frozenset({"line_comment", "block_comment"}),
+    resolve_import=resolve_rust_import,  # Import path resolver
+    log_patterns=(r"^\s*(?:println!|eprintln!|dbg!|tracing::)",),
+)
+```
+
+### Available Specs
+
+Generic plugins with tree-sitter specs:
+
+<Tabs>
+  <Tab title="Systems Languages">
+    | Language | Spec Variable | Functions | Classes | Imports |
+    |----------|---------------|-----------|---------|----------|
+    | Rust | `RUST_SPEC` | functions | structs | `use` statements |
+    | C/C++ | `CXX_SPEC` | functions | classes | `#include` |
+    | Zig | `ZIG_SPEC` | functions | structs | imports |
+    | Go | `GO_SPEC` | funcs, methods | structs | imports |
+  </Tab>
+
+  <Tab title="Dynamic Languages">
+    | Language | Spec Variable | Functions | Classes | Imports |
+    |----------|---------------|-----------|---------|----------|
+    | Ruby | `RUBY_SPEC` | methods | classes | require |
+    | PHP | `PHP_SPEC` | functions, methods | classes | use/require |
+    | Lua | `LUA_SPEC` | functions | tables | require |
+    | Perl | `PERL_SPEC` | subroutines | packages | use |
+    | Bash | `BASH_SPEC` | functions | — | source |
+    | R | `R_SPEC` | functions | — | library/source |
+  </Tab>
+
+  <Tab title="Functional Languages">
+    | Language | Spec Variable | Functions | Classes | Imports |
+    |----------|---------------|-----------|---------|----------|
+    | Elixir | `ELIXIR_SPEC` | functions | modules | import/alias |
+    | Haskell | `HASKELL_SPEC` | functions | — | import |
+    | Erlang | `ERLANG_SPEC` | functions | — | imports |
+    | OCaml | `OCAML_SPEC` | functions | modules | open |
+    | F# | `FSHARP_SPEC` | functions | — | open |
+    | Clojure | `CLOJURE_SPEC` | functions | — | require |
+  </Tab>
+
+  <Tab title="JVM/CLR Languages">
+    | Language | Spec Variable | Functions | Classes | Imports |
+    |----------|---------------|-----------|---------|----------|
+    | Java | `JAVA_SPEC` | methods, constructors | classes, interfaces | import |
+    | Kotlin | `KOTLIN_SPEC` | functions | classes | import |
+    | Scala | `SCALA_SPEC` | functions | classes | import |
+  </Tab>
+
+  <Tab title="Other">
+    | Language | Spec Variable | Functions | Classes | Imports |
+    |----------|---------------|-----------|---------|----------|
+    | JavaScript | `JS_SPEC` | functions, methods | classes | import/require |
+    | Swift | `SWIFT_SPEC` | functions | classes | import |
+    | Nim | `NIM_SPEC` | functions | — | import |
+    | PowerShell | `POWERSHELL_SPEC` | functions | — | Import-Module |
+  </Tab>
+</Tabs>
+
+## Integration Depth
+
+Generic plugins can specify an integration depth:
+
+<Tabs>
+  <Tab title="minimal">
+    **External tools only** — no tree-sitter, no AST analysis.
+
+    ```python
+    generic_lang(
+        name="fortran",
+        extensions=[".f90"],
+        tools=[{"label": "fortran-linter", ...}],
+        depth="minimal",
+    )
+    ```
+
+    **Gets**: Tool output + security + duplicates (text-based) + subjective review
+  </Tab>
+
+  <Tab title="shallow">
+    **Tools + basic tree-sitter** — function extraction, no import parsing.
+
+    ```python
+    generic_lang(
+        name="ruby",
+        extensions=[".rb"],
+        tools=[{"label": "rubocop", ...}],
+        depth="shallow",
+        treesitter_spec=RUBY_SPEC,
+    )
+    ```
+
+    **Gets**: Tool output + function duplicates + AST complexity + god class detection
+  </Tab>
+
+  <Tab title="standard">
+    **Full tree-sitter integration** — functions, imports, classes, complexity.
+
+    ```python
+    generic_lang(
+        name="rust",
+        extensions=[".rs"],
+        tools=[{"label": "cargo clippy", ...}],
+        depth="standard",
+        treesitter_spec=RUST_SPEC,
+    )
+    ```
+
+    **Gets**: Everything — tool output + AST analysis + dependency graph + coupling + orphans + cycles + test coverage
+  </Tab>
+</Tabs>
+
+## Example Generic Plugins
+
+<Tabs>
+  <Tab title="Rust">
+    ```python desloppify/languages/rust/__init__.py
+    from desloppify.languages._framework.generic import generic_lang
+    from desloppify.languages._framework.treesitter import RUST_SPEC
+
+    generic_lang(
+        name="rust",
+        extensions=[".rs"],
+        tools=[
+            {
+                "label": "cargo clippy",
+                "cmd": "cargo clippy --message-format=json 2>&1",
+                "fmt": "cargo",
+                "id": "clippy_warning",
+                "tier": 2,
+                "fix_cmd": "cargo clippy --fix --allow-dirty",
+            },
+            {
+                "label": "cargo check",
+                "cmd": "cargo check 2>&1",
+                "fmt": "gnu",
+                "id": "cargo_error",
+                "tier": 3,
+                "fix_cmd": None,
+            },
+        ],
+        exclude=["target"],
+        depth="standard",
+        detect_markers=["Cargo.toml"],
+        treesitter_spec=RUST_SPEC,
+    )
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```python desloppify/languages/ruby/__init__.py
+    from desloppify.languages._framework.generic import generic_lang
+    from desloppify.languages._framework.treesitter import RUBY_SPEC
+
+    generic_lang(
+        name="ruby",
+        extensions=[".rb"],
+        tools=[
+            {
+                "label": "rubocop",
+                "cmd": "rubocop --format=json",
+                "fmt": "rubocop",
+                "id": "rubocop_offense",
+                "tier": 2,
+                "fix_cmd": "rubocop --auto-correct",
+            },
+        ],
+        exclude=["vendor"],
+        depth="shallow",
+        detect_markers=["Gemfile"],
+        treesitter_spec=RUBY_SPEC,
+    )
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```python desloppify/languages/java/__init__.py
+    from desloppify.languages._framework.generic import generic_lang
+    from desloppify.languages._framework.treesitter import JAVA_SPEC
+
+    generic_lang(
+        name="java",
+        extensions=[".java"],
+        tools=[
+            {
+                "label": "pmd",
+                "cmd": "pmd check -d . -R rulesets/java/quickstart.xml -f textcolor 2>&1",
+                "fmt": "gnu",
+                "id": "pmd_violation",
+                "tier": 2,
+                "fix_cmd": None,
+            },
+        ],
+        exclude=["build", "target", ".gradle"],
+        depth="minimal",
+        detect_markers=["pom.xml", "build.gradle"],
+        treesitter_spec=JAVA_SPEC,
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Graceful Degradation
+
+Generic plugins handle missing tools gracefully:
+
+<Steps>
+  <Step title="Tool Not Found">
+    If `cargo clippy` is not installed:
+    - Desloppify skips the tool phase
+    - Emits a coverage warning: `"cargo clippy is not installed — Rust-specific linting will be skipped."`
+    - Continues with tree-sitter analysis (if available)
+  </Step>
+
+  <Step title="Tree-Sitter Not Available">
+    If `tree-sitter-language-pack` is not installed:
+    - Desloppify skips AST analysis
+    - Emits a coverage warning: `"tree-sitter is not available — AST analysis will be skipped."`
+    - Continues with tool output + cross-language detectors
+  </Step>
+
+  <Step title="Tool Timeout">
+    If a tool takes > 60 seconds:
+    - Desloppify kills the process
+    - Emits a coverage warning: `"cargo clippy timed out after 60s"`
+    - Continues with remaining phases
+  </Step>
+</Steps>
+
+## Extending Generic Plugins
+
+Generic plugins can be extended without converting to full plugins:
+
+<Tabs>
+  <Tab title="Add Zone Rules">
+    ```python
+    from desloppify.engine.policy.zones import Zone, ZoneRule
+
+    generic_lang(
+        name="rust",
+        # ... other config
+        zone_rules=[
+            ZoneRule(Zone.TEST, ["_test.rs", "/tests/"]),
+            ZoneRule(Zone.VENDOR, ["/vendor/"]),
+        ],
+    )
+    ```
+  </Tab>
+
+  <Tab title="Add Test Coverage Hooks">
+    ```python
+    from desloppify.hook_registry import register_lang_hooks
+
+    def map_test_to_source(test_file: str) -> str:
+        # Convert tests/foo_test.rs → src/foo.rs
+        return test_file.replace("tests/", "src/").replace("_test", "")
+
+    register_lang_hooks(
+        "rust",
+        test_coverage={"map_test_to_source": map_test_to_source}
+    )
+
+    generic_lang(name="rust", ...)
+    ```
+  </Tab>
+
+  <Tab title="Add Security Hooks">
+    ```python
+    from desloppify.hook_registry import register_lang_hooks
+
+    def detect_rust_security(files, zone_map):
+        # Custom Rust security detectors
+        findings = []
+        # ... analyze files
+        return findings, len(files)
+
+    register_lang_hooks(
+        "rust",
+        security=detect_rust_security
+    )
+
+    generic_lang(name="rust", ...)
+    ```
+  </Tab>
+</Tabs>
+
+## When to Use Generic Plugins
+
+<CardGroup cols={2}>
+  <Card title="Perfect for Generic Plugins" icon="check" iconType="solid">
+    - External linter exists (eslint, rubocop, cargo clippy)
+    - Tree-sitter grammar available
+    - Standard language structure (functions, imports, classes)
+    - No framework-specific patterns
+
+    **Example**: Rust, Ruby, Java, Swift
+  </Card>
+
+  <Card title="May Need Full Plugin" icon="triangle-exclamation" iconType="solid">
+    - Language-specific idioms (Python's `lru_cache` footguns)
+    - Framework integration (React hooks, Django ORM)
+    - Custom auto-fixers (AST rewriting)
+    - Fine-grained phase control
+
+    **Example**: Python, TypeScript, C#
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Full Plugins" icon="star" href="/languages/full-plugins">
+    Learn when to upgrade to a full plugin
+  </Card>
+  <Card title="Add a New Language" icon="plus" href="/languages/adding-languages">
+    Guide to creating a new generic plugin
+  </Card>
+</CardGroup>

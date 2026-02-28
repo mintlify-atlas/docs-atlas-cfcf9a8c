@@ -1,0 +1,351 @@
+---
+title: plan
+description: Generate a prioritized markdown plan from findings
+---
+
+The `plan` command generates a prioritized markdown document from your scan state. It organizes findings into actionable work items with priority tiers and clustering.
+
+## Usage
+
+```bash
+desloppify plan [OPTIONS]
+```
+
+With no arguments, generates a full markdown plan.
+
+## Options
+
+### `--output FILE`
+
+Write the plan to a file instead of stdout.
+
+```bash
+desloppify plan --output PLAN.md
+```
+
+### `--state FILE`
+
+Path to custom state file.
+
+```bash
+desloppify plan --state .desloppify/custom-state.json
+```
+
+## Output Format
+
+The generated plan includes:
+
+### Priority Tiers
+
+Findings are organized into tiers (T1-T4):
+- **T1 (Critical)**: Security issues, data loss risks
+- **T2 (Important)**: Bugs, correctness issues, major code smells
+- **T3 (Moderate)**: Code quality, duplication, dead code
+- **T4 (Cosmetic)**: Style, subjective review dimensions
+
+### Sections
+
+Each plan contains:
+- **Summary**: Overview of total findings and health scores
+- **Top Priority Items**: Highest-ranked actionable items
+- **Tier Breakdown**: Findings grouped by tier
+- **File-level Context**: Which files need attention
+- **Detector Insights**: Distribution of issue types
+
+### Example Output
+
+```markdown
+# Desloppify Plan
+
+## Summary
+- Overall Health: 87.3%
+- Total Findings: 42 open
+- Next Actions: 12 items in queue
+
+## T1: Critical (3 items)
+
+### security::src/api/auth.ts::hardcoded-secret
+**File:** src/api/auth.ts:15
+**Summary:** Hardcoded API secret in source code
+**Action:** Move secret to environment variables
+
+...
+
+## T2: Important (8 items)
+
+...
+```
+
+## Plan Subcommands
+
+The `plan` command also supports subcommands for managing the living plan:
+
+### `plan show`
+
+Display plan metadata summary.
+
+```bash
+desloppify plan show
+```
+
+### `plan queue`
+
+Compact table of upcoming queue items.
+
+```bash
+desloppify plan queue
+desloppify plan queue --top 10
+desloppify plan queue --tier 1
+desloppify plan queue --cluster my-cluster
+```
+
+Options:
+- `--top N`: Max items to show (default: 30, 0=all)
+- `--tier N`: Filter to specific tier (1-4)
+- `--cluster NAME`: Filter to cluster
+- `--include-skipped`: Include skipped items at end
+
+### `plan reset`
+
+Reset plan to empty state.
+
+```bash
+desloppify plan reset
+```
+
+### `plan move`
+
+Move findings in the queue for custom prioritization.
+
+```bash
+desloppify plan move security top
+desloppify plan move "unused::src/foo.ts::*" top
+desloppify plan move smells bottom
+desloppify plan move unused before security
+```
+
+### `plan done`
+
+Mark findings as fixed (shows score movement + next step).
+
+```bash
+desloppify plan done "unused::src/foo.tsx::React" \
+  --attest "I have actually removed the import and I am not gaming the score."
+
+desloppify plan done security --note "patched XSS" \
+  --attest "I have actually fixed the vulnerability and I am not gaming the score."
+```
+
+Options:
+- `--note TEXT`: Explanation of the fix
+- `--attest TEXT`: Required attestation (must include "I have actually" and "not gaming")
+
+### `plan skip`
+
+Skip findings temporarily, permanently (wontfix), or mark as false positive.
+
+```bash
+# Temporary skip
+desloppify plan skip "smells::src/legacy.ts::*" --reason "Legacy code"
+
+# Permanent skip (wontfix)
+desloppify plan skip "unused::config.ts::DEBUG" \
+  --permanent \
+  --note "Used in debugging sessions" \
+  --attest "I have actually verified this is needed and I am not gaming."
+
+# False positive
+desloppify plan skip "security::api.ts::123" \
+  --false-positive \
+  --attest "I have actually verified this is a false positive."
+```
+
+Options:
+- `--reason TEXT`: Why being skipped
+- `--review-after N`: Re-surface after N scans (temporary only)
+- `--permanent`: Mark as wontfix (requires `--note` and `--attest`)
+- `--false-positive`: Mark as false positive (requires `--attest`)
+- `--note TEXT`: Explanation
+- `--attest TEXT`: Required attestation
+
+### `plan unskip`
+
+Bring skipped findings back to queue.
+
+```bash
+desloppify plan unskip "unused::src/foo.ts::*"
+```
+
+### `plan reopen`
+
+Reopen resolved findings.
+
+```bash
+desloppify plan reopen "security::auth.ts::456"
+```
+
+### `plan note`
+
+Set note on findings.
+
+```bash
+desloppify plan note "unused::src/utils.ts::*" "Will refactor during Q2"
+```
+
+### `plan describe`
+
+Set augmented description for findings.
+
+```bash
+desloppify plan describe "security::api.ts::*" "Auth layer security review"
+```
+
+### `plan focus`
+
+Set or clear active cluster focus.
+
+```bash
+desloppify plan focus auth-refactor
+desloppify plan focus --clear
+```
+
+### `plan cluster`
+
+Manage finding clusters.
+
+#### Create a cluster
+
+```bash
+desloppify plan cluster create auth-refactor \
+  --description "Authentication layer refactoring" \
+  --action "Migrate to new auth system"
+```
+
+#### Add findings to cluster
+
+```bash
+desloppify plan cluster add auth-refactor "src/auth/**"
+```
+
+#### Remove findings from cluster
+
+```bash
+desloppify plan cluster remove auth-refactor "src/auth/legacy.ts"
+```
+
+#### Move cluster
+
+```bash
+desloppify plan cluster move auth-refactor top
+```
+
+#### Show cluster details
+
+```bash
+desloppify plan cluster show auth-refactor
+```
+
+#### List all clusters
+
+```bash
+desloppify plan cluster list
+```
+
+#### Delete cluster
+
+```bash
+desloppify plan cluster delete auth-refactor
+```
+
+## Examples
+
+### Generate plan and save to file
+
+```bash
+desloppify plan --output PLAN.md
+```
+
+### View compact queue
+
+```bash
+desloppify plan queue --top 20
+```
+
+### Prioritize security findings
+
+```bash
+desloppify plan move security top
+```
+
+### Create themed cluster
+
+```bash
+desloppify plan cluster create perf-improvements \
+  --description "Performance optimization tasks"
+
+desloppify plan cluster add perf-improvements "large::*"
+desloppify plan cluster add perf-improvements "dupes::*"
+```
+
+### Mark items as done
+
+```bash
+desloppify plan done "unused::src/components/Modal.tsx::*" \
+  --note "Removed unused imports and variables" \
+  --attest "I have actually cleaned up the file and I am not gaming the score."
+```
+
+## Typical Workflow
+
+1. **Scan** the codebase:
+   ```bash
+   desloppify scan
+   ```
+
+2. **Generate plan**:
+   ```bash
+   desloppify plan --output PLAN.md
+   ```
+
+3. **Review queue**:
+   ```bash
+   desloppify plan queue
+   ```
+
+4. **Create clusters** for related work:
+   ```bash
+   desloppify plan cluster create auth-cleanup
+   desloppify plan cluster add auth-cleanup "src/auth/**"
+   ```
+
+5. **Focus on cluster**:
+   ```bash
+   desloppify plan focus auth-cleanup
+   ```
+
+6. **Work on next item**:
+   ```bash
+   desloppify next
+   ```
+
+7. **Mark as done**:
+   ```bash
+   desloppify plan done <finding-id> --attest "..."
+   ```
+
+## Next Command
+
+After generating a plan, the command suggests:
+
+```bash
+desloppify next --count 20
+```
+
+This shows the top 20 priority items to work on.
+
+## Related Commands
+
+- [`next`](/commands/next) - Show next priority item(s)
+- [`scan`](/commands/scan) - Update findings state
+- [`show`](/commands/show) - View specific findings
+- [`status`](/commands/status) - Overall health dashboard

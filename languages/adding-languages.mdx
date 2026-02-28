@@ -1,0 +1,651 @@
+---
+title: Adding New Language Plugins
+description: Guide to scaffolding and implementing language plugins from generic to full
+---
+
+Desloppify's plugin architecture lets you add new languages incrementally: start generic, extend in-place, or go full when needed.
+
+## Quick Start: Add a Generic Plugin
+
+Most languages should start as generic plugins:
+
+<Steps>
+  <Step title="Create Plugin File">
+    Create `desloppify/languages/<name>/__init__.py`:
+
+    ```python desloppify/languages/elixir/__init__.py
+    """Elixir language plugin — credo."""
+
+    from desloppify.languages._framework.generic import generic_lang
+    from desloppify.languages._framework.treesitter import ELIXIR_SPEC
+
+    generic_lang(
+        name="elixir",
+        extensions=[".ex", ".exs"],
+        tools=[
+            {
+                "label": "credo",
+                "cmd": "mix credo --format=json",
+                "fmt": "json",
+                "id": "credo_issue",
+                "tier": 2,
+                "fix_cmd": "mix credo --fix",
+            },
+        ],
+        exclude=["_build", "deps"],
+        depth="standard",
+        detect_markers=["mix.exs"],
+        treesitter_spec=ELIXIR_SPEC,
+    )
+    ```
+  </Step>
+
+  <Step title="Test Auto-Discovery">
+    Desloppify automatically discovers plugins at startup:
+
+    ```bash
+    # List available languages
+    desloppify langs
+
+    # Should show:
+    # elixir    generic    credo    standard    .ex, .exs    mix.exs
+    ```
+  </Step>
+
+  <Step title="Test Scanning">
+    ```bash
+    # Scan an Elixir project
+    cd /path/to/elixir-project
+    desloppify scan --lang elixir
+
+    # Check coverage (what detectors ran)
+    desloppify scan --lang elixir --show-coverage
+    ```
+  </Step>
+</Steps>
+
+That's it. Zero shared-code edits. The plugin is production-ready.
+
+## Scaffold Command
+
+For full plugins, use the scaffold command:
+
+```bash
+desloppify dev scaffold-lang <name> \
+  --extension <ext> \
+  --marker <root-marker> \
+  [--wire-pyproject]  # Add to pyproject.toml (for development)
+```
+
+### Example: Scaffold Rust Plugin
+
+```bash
+desloppify dev scaffold-lang rust \
+  --extension .rs \
+  --marker Cargo.toml
+```
+
+This creates:
+
+```
+desloppify/languages/rust/
+├── __init__.py          # LangConfig class with @register_lang()
+├── commands.py          # CLI command builders
+├── extractors.py        # File discovery + function extraction
+├── phases.py            # Detector phase definitions
+├── move.py              # Refactoring helpers
+├── review.py            # Subjective review dimensions
+├── test_coverage.py     # Test coverage hooks
+├── detectors/           # Detector modules
+│   └── __init__.py
+├── fixers/              # Auto-fixer modules
+│   └── __init__.py
+└── tests/               # Plugin test suite
+    └── __init__.py
+```
+
+<Info>
+  **Scaffold is for full plugins only**. Generic plugins are single-file and don't need scaffolding.
+</Info>
+
+## Tool Specification Reference
+
+### Required Fields
+
+<ParamField path="label" type="string" required>
+  Human-readable tool name (e.g., `"cargo clippy"`, `"rubocop"`)
+</ParamField>
+
+<ParamField path="cmd" type="string" required>
+  Shell command to run the tool. Executed from project root.
+
+  ```python
+  "cmd": "cargo clippy --message-format=json 2>&1"
+  ```
+</ParamField>
+
+<ParamField path="fmt" type="string" required>
+  Output format parser. Options:
+  - `"json"` - Generic JSON with `file`, `line`, `message` keys
+  - `"gnu"` - GNU format: `file:line:col: message`
+  - `"cargo"` - Cargo JSON messages
+  - `"eslint"` - ESLint JSON output
+  - `"rubocop"` - RuboCop JSON
+  - `"golangci"` - golangci-lint JSON
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Finding ID prefix. Used to categorize findings.
+
+  ```python
+  "id": "clippy_warning"  # Findings: clippy_warning/001, clippy_warning/002, ...
+  ```
+</ParamField>
+
+<ParamField path="tier" type="number" required>
+  Severity tier:
+  - `1` - Errors (compilation failures, critical issues)
+  - `2` - Warnings (linting, best practices)
+  - `3` - Style/info (formatting, conventions)
+</ParamField>
+
+### Optional Fields
+
+<ParamField path="fix_cmd" type="string">
+  Auto-fix command. If provided, `desloppify fix <detector>` will run this.
+
+  ```python
+  "fix_cmd": "cargo clippy --fix --allow-dirty"
+  ```
+</ParamField>
+
+## Adding a Tree-Sitter Spec
+
+If a tree-sitter grammar exists for your language, add a spec:
+
+<Steps>
+  <Step title="Define the Spec">
+    Add to `desloppify/languages/_framework/treesitter/_specs.py`:
+
+    ```python
+    ELIXIR_SPEC = TreeSitterLangSpec(
+        grammar="elixir",  # tree-sitter-elixir grammar name
+        function_query="""
+            (call
+              target: (identifier) @_def
+              (arguments
+                (call
+                  target: (identifier) @name)) @body)
+        """,
+        import_query="""
+            (call
+              target: (identifier) @_import
+              (arguments
+                (alias) @path))
+        """,
+        class_query="""
+            (call
+              target: (identifier) @_defmodule
+              (arguments
+                (alias) @name
+                (do_block) @body))
+        """,
+        comment_node_types=frozenset({"comment"}),
+        resolve_import=resolve_elixir_import,
+        log_patterns=(r"^\s*(?:IO\.puts|Logger\.)",),
+    )
+    ```
+  </Step>
+
+  <Step title="Implement Import Resolver">
+    Add to `desloppify/languages/_framework/treesitter/_imports.py`:
+
+    ```python
+    def resolve_elixir_import(path_text: str, current_file: Path, scan_root: Path) -> list[Path]:
+        """Resolve Elixir alias/import to file path.
+        
+        MyApp.Users.UserService → lib/my_app/users/user_service.ex
+        """
+        if not path_text:
+            return []
+        
+        # Convert module path to file path
+        parts = path_text.split(".")
+        rel_path = "/".join(p.lower() for p in parts) + ".ex"
+        
+        # Check lib/ and src/
+        for base in ["lib", "src"]:
+            candidate = scan_root / base / rel_path
+            if candidate.exists():
+                return [candidate]
+        
+        return []
+    ```
+  </Step>
+
+  <Step title="Export the Spec">
+    Add to `desloppify/languages/_framework/treesitter/__init__.py`:
+
+    ```python
+    from ._specs import ELIXIR_SPEC
+
+    __all__ = [..., "ELIXIR_SPEC"]
+    ```
+  </Step>
+
+  <Step title="Use in Plugin">
+    ```python
+    from desloppify.languages._framework.treesitter import ELIXIR_SPEC
+
+    generic_lang(
+        name="elixir",
+        # ...
+        treesitter_spec=ELIXIR_SPEC,
+    )
+    ```
+  </Step>
+</Steps>
+
+## Tree-Sitter Query Patterns
+
+Tree-sitter queries use S-expression syntax:
+
+<Tabs>
+  <Tab title="Function Extraction">
+    Capture function name and body:
+
+    ```scheme
+    (function_declaration
+        name: (identifier) @name
+        body: (block) @body) @func
+    ```
+
+    - `@name` - Function name
+    - `@body` - Function body (for duplicate detection)
+    - `@func` - Entire function node (for location)
+  </Tab>
+
+  <Tab title="Import Extraction">
+    Capture import paths:
+
+    ```scheme
+    (import_statement
+        (dotted_name) @path) @import
+    ```
+
+    - `@path` - Import path (e.g., `foo.bar.baz`)
+    - `@import` - Entire import node
+  </Tab>
+
+  <Tab title="Class Extraction">
+    Capture class definitions:
+
+    ```scheme
+    (class_declaration
+        name: (identifier) @name
+        body: (class_body) @body) @class
+    ```
+
+    - `@name` - Class name
+    - `@body` - Class body (for god class detection)
+    - `@class` - Entire class node
+  </Tab>
+</Tabs>
+
+<Info>
+  **Query syntax reference**: [tree-sitter queries documentation](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries)
+</Info>
+
+## Incremental Path: Generic → Full
+
+Only upgrade to full plugin when generic capabilities are insufficient:
+
+<Steps>
+  <Step title="Start Generic (5 minutes)">
+    ```python
+    generic_lang(
+        name="elixir",
+        extensions=[".ex"],
+        tools=[{"label": "credo", ...}],
+        treesitter_spec=ELIXIR_SPEC,
+    )
+    ```
+
+    **Gets**: Tool output + AST analysis + security + duplicates + subjective review
+  </Step>
+
+  <Step title="Extend In-Place (30 minutes)">
+    Add zone rules, test coverage hooks, security hooks:
+
+    ```python
+    from desloppify.engine.policy.zones import Zone, ZoneRule
+    from desloppify.hook_registry import register_lang_hooks
+
+    def map_test_to_source(test_file: str) -> str:
+        # test/foo_test.exs → lib/foo.ex
+        return test_file.replace("test/", "lib/").replace("_test", "")
+
+    register_lang_hooks(
+        "elixir",
+        test_coverage={"map_test_to_source": map_test_to_source}
+    )
+
+    generic_lang(
+        name="elixir",
+        # ... other config
+        zone_rules=[
+            ZoneRule(Zone.TEST, ["_test.exs", "/test/"]),
+            ZoneRule(Zone.CONFIG, ["mix.exs", "config/"]),
+        ],
+    )
+    ```
+  </Step>
+
+  <Step title="Go Full (days/weeks)">
+    Only when you need:
+    - Custom smell detectors (beyond AST patterns)
+    - Auto-fixers with AST rewriting
+    - Framework-specific analysis (Phoenix channels, GenServers)
+
+    ```bash
+    # Scaffold full plugin structure
+    desloppify dev scaffold-lang elixir --extension .ex --marker mix.exs
+    ```
+
+    Then implement:
+    - `detectors/smells.py` - Language-specific smells
+    - `fixers/` - Auto-fixers
+    - `phases.py` - Custom detector phases
+    - `review.py` - Custom review dimensions
+  </Step>
+</Steps>
+
+## Testing Your Plugin
+
+<Tabs>
+  <Tab title="Generic Plugin Testing">
+    ```bash
+    # Test on a real project
+    cd /path/to/<lang>-project
+    desloppify scan --lang <name>
+
+    # Check coverage (what detectors ran)
+    desloppify scan --lang <name> --show-coverage
+
+    # Verify findings format
+    desloppify scan --lang <name> --format json > findings.json
+    ```
+  </Tab>
+
+  <Tab title="Full Plugin Testing">
+    ```bash
+    # Run plugin tests
+    pytest -q desloppify/languages/<name>/tests/
+
+    # Validate plugin contract
+    pytest -q desloppify/tests/lang/common/test_lang_standardization.py::test_<name>_plugin
+
+    # Test on real project
+    cd /path/to/<lang>-project
+    desloppify scan --lang <name>
+    ```
+  </Tab>
+</Tabs>
+
+## Full Plugin Requirements
+
+When building a full plugin, ensure:
+
+<AccordionGroup>
+  <Accordion title="Required Files">
+    The scaffold command creates these, but you must implement them:
+
+    - `__init__.py` - `LangConfig` class with `@register_lang()` decorator
+    - `commands.py` - `get_detect_commands()` function
+    - `extractors.py` - `find_<lang>_files()`, `extract_functions()`
+    - `phases.py` - Detector phase functions
+    - `move.py` - Refactoring helpers (can be stubs)
+    - `review.py` - Subjective review config
+    - `test_coverage.py` - Test coverage hooks
+    - `detectors/` - At least one detector module
+    - `fixers/` - Auto-fixer modules (can be empty)
+    - `tests/` - Plugin test suite
+  </Accordion>
+
+  <Accordion title="LangConfig Contract">
+    Your `__init__.py` must define a `LangConfig` subclass:
+
+    ```python
+    from desloppify.languages import register_lang
+    from desloppify.languages._framework.base.types import LangConfig, DetectorPhase
+
+    @register_lang("elixir")
+    class ElixirConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="elixir",
+                extensions=[".ex", ".exs"],
+                exclusions=["_build", "deps"],
+                phases=[
+                    DetectorPhase("Structural analysis", phase_structural),
+                    # ... more phases
+                ],
+                detect_markers=["mix.exs"],
+                build_dep_graph=build_dep_graph,  # Or stub
+                # ... more config (see full plugin examples)
+            )
+    ```
+  </Accordion>
+
+  <Accordion title="Phase Function Contract">
+    Each detector phase is a function:
+
+    ```python
+    from desloppify.languages._framework.base.types import LangRun
+
+    def phase_structural(run: LangRun) -> list[dict]:
+        """Detect structural issues.
+        
+        Args:
+            run: Mutable execution state (files, graph, zone_map, etc.)
+        
+        Returns:
+            List of detection entries (dicts with file, line, message, id, tier)
+        """
+        findings = []
+        for filepath in run.files:
+            # Analyze file, emit findings
+            findings.append({
+                "file": str(filepath),
+                "line": 10,
+                "message": "Long function detected",
+                "id": "long_function",
+                "tier": 2,
+            })
+        return findings
+    ```
+  </Accordion>
+
+  <Accordion title="Zone Rules">
+    Define zone classification patterns:
+
+    ```python
+    from desloppify.engine.policy.zones import Zone, ZoneRule, COMMON_ZONE_RULES
+
+    ELIXIR_ZONE_RULES = [
+        ZoneRule(Zone.TEST, ["_test.exs", "/test/"]),
+        ZoneRule(Zone.CONFIG, ["mix.exs", "/config/"]),
+        ZoneRule(Zone.GENERATED, ["/_build/"]),
+    ] + COMMON_ZONE_RULES
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Reusing Framework Utilities
+
+Both generic and full plugins can reuse shared framework code:
+
+<Tabs>
+  <Tab title="Shared Phases">
+    ```python
+    from desloppify.languages._framework.base.phase_builders import (
+        detector_phase_security,
+        detector_phase_test_coverage,
+        detector_phase_signature,
+        shared_subjective_duplicates_tail,
+    )
+
+    phases = [
+        # ... your custom phases
+        detector_phase_security(),  # Cross-language security
+        detector_phase_test_coverage(),  # Test coverage mapping
+        detector_phase_signature(),  # Signature variance
+        *shared_subjective_duplicates_tail(),  # Subjective + duplicates + boilerplate
+    ]
+    ```
+  </Tab>
+
+  <Tab title="Tree-Sitter Phases">
+    ```python
+    from desloppify.languages._framework.treesitter.phases import (
+        all_treesitter_phases,
+        make_complexity_phase,
+        make_god_class_phase,
+        make_cohesion_phase,
+    )
+
+    phases = [
+        # ... other phases
+        *all_treesitter_phases("elixir"),  # All tree-sitter phases
+        # Or cherry-pick:
+        # make_complexity_phase(ELIXIR_SPEC),
+        # make_god_class_phase(ELIXIR_SPEC),
+    ]
+    ```
+  </Tab>
+
+  <Tab title="Tool Phases">
+    ```python
+    from desloppify.languages._framework.generic import make_tool_phase
+
+    phases = [
+        make_tool_phase(
+            "credo",
+            "mix credo --format=json",
+            "json",
+            "credo_issue",
+            tier=2,
+        ),
+    ]
+    ```
+  </Tab>
+</Tabs>
+
+## Design Rules
+
+<Warning>
+  **Import direction**: Language plugins → framework. Never framework → plugins.
+
+  ```python
+  # ✅ OK: Plugin imports framework
+  from desloppify.languages._framework.base.types import LangConfig
+
+  # ❌ NEVER: Framework imports plugin
+  from desloppify.languages.python.phases import phase_smells
+  ```
+</Warning>
+
+<Info>
+  **Keep language code isolated**: All language-specific code stays in `languages/<name>/`. Reusable cross-language code goes in `languages/_framework/`.
+</Info>
+
+## Examples to Study
+
+<CardGroup cols={2}>
+  <Card title="Minimal Generic Plugin" icon="file">
+    **Java**: 24 lines, pmd integration
+    
+    `desloppify/languages/java/__init__.py`
+  </Card>
+
+  <Card title="Standard Generic Plugin" icon="plug">
+    **Rust**: 32 lines, cargo clippy + tree-sitter
+    
+    `desloppify/languages/rust/__init__.py`
+  </Card>
+
+  <Card title="Full Plugin (Simple)" icon="star">
+    **Go**: 103 lines, golangci-lint + tree-sitter + custom phases
+    
+    `desloppify/languages/go/__init__.py`
+  </Card>
+
+  <Card title="Full Plugin (Complex)" icon="star" iconType="solid">
+    **Python**: 213 lines, 15+ custom phases, bandit, ruff, auto-fixers
+    
+    `desloppify/languages/python/__init__.py`
+  </Card>
+</CardGroup>
+
+## Common Pitfalls
+
+<AccordionGroup>
+  <Accordion title="Tool Command Doesn't Output JSON" icon="triangle-exclamation">
+    Use GNU format if JSON isn't available:
+
+    ```python
+    {
+        "cmd": "shellcheck -f gcc *.sh",  # GNU format: file:line:col: message
+        "fmt": "gnu",
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Tree-Sitter Grammar Name Wrong" icon="triangle-exclamation">
+    Grammar name must match tree-sitter package:
+
+    ```python
+    # ❌ Wrong
+    TreeSitterLangSpec(grammar="typescript")  # Package is tree-sitter-typescript
+
+    # ✅ Correct
+    TreeSitterLangSpec(grammar="typescript")  # But check package docs!
+    ```
+
+    Verify with: `tree-sitter list`
+  </Accordion>
+
+  <Accordion title="Import Resolver Returns Wrong Paths" icon="triangle-exclamation">
+    Test your resolver:
+
+    ```python
+    def resolve_elixir_import(path_text, current_file, scan_root):
+        # Add debug logging during development
+        print(f"Resolving: {path_text} from {current_file}")
+        result = # ... your logic
+        print(f"Resolved to: {result}")
+        return result
+    ```
+  </Accordion>
+
+  <Accordion title="Plugin Not Auto-Discovered" icon="triangle-exclamation">
+    Ensure:
+    1. File is at `desloppify/languages/<name>/__init__.py`
+    2. File calls `generic_lang()` or `@register_lang()` at module level
+    3. No syntax errors (check with `python -m py_compile languages/<name>/__init__.py`)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Generic Plugins Reference" icon="plug" href="/languages/generic-plugins">
+    Deep dive into tree-sitter and tool integration
+  </Card>
+  <Card title="Full Plugins Reference" icon="star" href="/languages/full-plugins">
+    Study the 6 full plugins for implementation patterns
+  </Card>
+  <Card title="Language Support Overview" icon="list" href="/languages/overview">
+    See all 28+ supported languages
+  </Card>
+</CardGroup>

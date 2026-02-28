@@ -1,0 +1,217 @@
+---
+title: "Scoring System"
+description: "How Desloppify calculates quality scores and prevents gaming"
+icon: "calculator"
+---
+
+## Overview
+
+Desloppify's scoring system is designed to measure genuine codebase quality, not just compliance with arbitrary rules. The score ranges from 0-100, where **98+ correlates with a codebase a seasoned engineer would call beautiful**.
+
+The system combines mechanical detection (60% weight) and subjective LLM review (40% weight) into a single composite score, with anti-gaming features to ensure improvements reflect real quality gains.
+
+## Score Modes
+
+Desloppify calculates three different score views:
+
+<CardGroup cols={3}>
+  <Card title="Lenient" icon="check">
+    Counts only **open** findings as failures. Shows your current quality baseline.
+  </Card>
+  <Card title="Strict" icon="shield">
+    Counts **open + wontfix** as failures. The primary score agents optimize for.
+  </Card>
+  <Card title="Verified Strict" icon="lock">
+    Counts **all findings** (open, wontfix, fixed, false positives) as failures. Used for anti-gaming validation.
+  </Card>
+</CardGroup>
+
+### Why Multiple Modes?
+
+The multi-mode system prevents gaming:
+- Marking issues as `wontfix` doesn't improve your strict score
+- Resolving issues without actually fixing code is caught by verified strict mode
+- The only way to improve the score is to genuinely improve the code
+
+```python
+# From desloppify/engine/_scoring/policy/core.py
+FAILURE_STATUSES_BY_MODE: dict[ScoreMode, frozenset[str]] = {
+    "lenient": frozenset({"open"}),
+    "strict": frozenset({"open", "wontfix"}),
+    "verified_strict": frozenset({"open", "wontfix", "fixed", "false_positive"}),
+}
+```
+
+## Scoring Formula
+
+The overall score is a **weighted blend** of mechanical and subjective dimensions:
+
+```python
+overall_score = (mechanical_avg × 0.40) + (subjective_avg × 0.60)
+```
+
+### Mechanical Pool (40%)
+
+Mechanical dimensions are weighted by:
+1. **Configured dimension weight** - Each dimension has a base weight
+2. **Sample dampening** - Dimensions with fewer than 200 checks are proportionally downweighted
+
+```python
+# From desloppify/engine/_scoring/policy/core.py
+MIN_SAMPLE = 200
+MECHANICAL_DIMENSION_WEIGHTS: dict[str, float] = {
+    "file health": 2.0,
+    "code quality": 1.0,
+    "duplication": 1.0,
+    "test health": 1.0,
+    "security": 1.0,
+}
+```
+
+For each dimension:
+```python
+sample_factor = min(1.0, checks / MIN_SAMPLE) if checks > 0 else 0.0
+effective_weight = configured_weight × sample_factor
+```
+
+This prevents small dimensions from swinging the overall score.
+
+### Subjective Pool (60%)
+
+Subjective dimensions are assessed by LLM review and weighted to emphasize architectural quality:
+
+```python
+# From desloppify/engine/_scoring/policy/core.py
+SUBJECTIVE_DIMENSION_WEIGHTS: dict[str, float] = {
+    "high elegance": 22.0,
+    "mid elegance": 22.0,
+    "low elegance": 12.0,
+    "contracts": 12.0,
+    "type safety": 12.0,
+    "abstraction fit": 8.0,
+    "logic clarity": 6.0,
+    "structure nav": 5.0,
+    "error consistency": 3.0,
+    "naming quality": 2.0,
+    "ai generated debt": 1.0,
+    "design coherence": 10.0,
+}
+```
+
+No sample dampening is applied to subjective dimensions.
+
+## Per-Detector Scoring
+
+Each detector contributes to a dimension's score based on:
+
+### For Non-File-Based Detectors
+
+```python
+for finding in findings:
+    weight = CONFIDENCE_WEIGHTS[finding.confidence]
+    weighted_failures += weight
+
+pass_rate = (potential - weighted_failures) / potential
+dimension_score = pass_rate × 100
+```
+
+**Confidence weights** (from `desloppify/engine/_scoring/policy/core.py:133`):
+- High: 1.0
+- Medium: 0.7
+- Low: 0.3
+
+### For File-Based Detectors
+
+File-based detectors (like `smells`, `test_coverage`) use **tiered capping** to prevent over-penalization:
+
+```python
+# From desloppify/engine/_scoring/detection.py
+_FILE_CAP_HIGH_THRESHOLD = 6     # findings in file for high cap
+_FILE_CAP_MID_THRESHOLD = 3      # findings in file for mid cap
+_FILE_CAP_HIGH = 2.0             # cap value at high concentration
+_FILE_CAP_MID = 1.5              # cap value at mid concentration
+_FILE_CAP_LOW = 1.0              # cap value at low concentration (1-2 findings)
+```
+
+Findings per file are capped so that a single problematic file doesn't dominate the score.
+
+## Anti-Gaming Features
+
+<AccordionGroup>
+  <Accordion title="Tier Weighting" icon="weight-hanging">
+    Higher-tier issues have proportionally greater weight:
+    - T1 (auto-fix): weight 1
+    - T2 (quick fix): weight 2
+    - T3 (judgment): weight 3
+    - T4 (major refactor): weight 4
+    
+    This prevents gaming by only fixing easy issues.
+  </Accordion>
+
+  <Accordion title="Wontfix Penalty" icon="ban">
+    Marking findings as `wontfix` keeps them in the strict score, preventing dismissal of real issues.
+  </Accordion>
+
+  <Accordion title="Subjective Gaming Detection" icon="magnifying-glass">
+    If subjective scores land within 0.05 points of the target without supporting evidence:
+    ```python
+    SUBJECTIVE_TARGET_MATCH_TOLERANCE = 0.05
+    ```
+    
+    The system flags potential gaming and requires explicit findings or dimension notes.
+  </Accordion>
+
+  <Accordion title="Zone Exclusions" icon="shield-halved">
+    Security findings in test/config/generated zones are excluded from scoring to prevent inflated scores from non-production code.
+  </Accordion>
+</AccordionGroup>
+
+## Dimension Contribution Breakdown
+
+You can see exactly how each dimension contributes:
+
+```python
+# Each dimension's contribution to overall score
+pool_share = effective_weight / total_pool_weight
+per_point = pool_fraction × pool_share  # 0.40 for mechanical, 0.60 for subjective
+contribution = per_point × dimension_score
+drag = per_point × (100 - dimension_score)
+```
+
+This transparency helps you understand which dimensions to focus on for maximum impact.
+
+## Example Calculation
+
+Let's walk through a simplified example:
+
+```python
+# Mechanical dimensions
+code_quality: 85.0 (150 checks, sample_factor=0.75, weight=1.0)
+security: 100.0 (50 checks, sample_factor=0.25, weight=1.0)
+
+# Effective weights
+code_quality_eff = 1.0 × 0.75 = 0.75
+security_eff = 1.0 × 0.25 = 0.25
+total_mech_weight = 1.0
+
+mechanical_avg = (85.0×0.75 + 100.0×0.25) / 1.0 = 88.75
+
+# Subjective dimensions
+high_elegance: 92.0 (weight=22.0)
+mid_elegance: 88.0 (weight=22.0)
+
+subjective_avg = (92.0×22.0 + 88.0×22.0) / 44.0 = 90.0
+
+# Overall
+overall = 88.75×0.40 + 90.0×0.60 = 35.5 + 54.0 = 89.5
+```
+
+<Tip>
+Use `desloppify next --explain` to see score impact estimates for fixing specific findings.
+</Tip>
+
+## Related Commands
+
+- `desloppify status` - View current scores across all modes
+- `desloppify next --explain` - See score impact of fixing next issue
+- `desloppify show <detector>` - Examine findings by detector

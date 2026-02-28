@@ -1,0 +1,458 @@
+---
+title: 'Zone Classification'
+description: 'Deterministic file intent classification for scoring and detection policy'
+---
+
+## Overview
+
+The zone system classifies files by **intent** — production code, tests, config, generated code, scripts, vendor dependencies. Zone metadata flows through findings, scoring, and LLM context to ensure detectors focus on what matters.
+
+**Design principle**: Zones are deterministic and path-based. No heuristics, no false positives. If a file is in `/tests/`, it's a test. If it's in `/vendor/`, it's excluded.
+
+## Zone Types
+
+<AccordionGroup>
+  <Accordion title="Production" icon="code" defaultOpen>
+    **Intent**: Application code that ships to users.
+
+    **Detection policy**:
+    - All detectors run at full confidence
+    - Findings contribute to health score
+    - Strict review standards apply
+
+    **Classification**: Default zone (anything not matching other rules)
+
+    **Example paths**:
+    - `src/components/Button.tsx`
+    - `lib/utils/parser.py`
+    - `app/services/api.ts`
+  </Accordion>
+
+  <Accordion title="Test" icon="flask">
+    **Intent**: Test code, fixtures, test utilities.
+
+    **Detection policy**:
+    - Skip: `unused_exports`, `orphaned`, `single_use`
+    - Downgrade: `smells`, `structural` (low confidence)
+    - **Excluded from health score**
+
+    **Rationale**: Test code intentionally violates production rules (e.g., unused test helpers, high complexity in fixture builders).
+
+    **Classification rules**:
+    - `/tests/`, `/test/`, `/fixtures/` directories
+    - `.test.ts`, `.spec.py`, `_test.go` suffixes
+    - `conftest.py`, `setup_test.rb` exact names (configurable per language)
+
+    **Example paths**:
+    - `tests/unit/parser.test.ts`
+    - `src/components/__tests__/Button.test.tsx`
+    - `test_utils.py`
+  </Accordion>
+
+  <Accordion title="Config" icon="gear">
+    **Intent**: Configuration files, build scripts, linter configs.
+
+    **Detection policy**:
+    - Skip: `complexity`, `large`, `smells`, `structural`
+    - **Excluded from health score**
+
+    **Rationale**: Config files are often large and repetitive by design (e.g., Webpack configs, ESLint rule lists).
+
+    **Classification rules**:
+    - Exact names: `vite.config.ts`, `tsconfig.json`, `setup.py`, `Makefile`
+    - Substring matches: `eslintrc`, `prettierrc`, `.config.`
+    - Directory: `/config/`
+
+    **Example paths**:
+    - `vite.config.ts`
+    - `.github/workflows/ci.yml`
+    - `config/database.yml`
+  </Accordion>
+
+  <Accordion title="Generated" icon="robot">
+    **Intent**: Machine-generated code not authored by humans.
+
+    **Detection policy**:
+    - Skip: **All detectors**
+    - **Excluded from health score**
+
+    **Rationale**: Generated code doesn't reflect human practices and is regenerated on demand.
+
+    **Classification rules**:
+    - `/generated/`, `/__generated__/` directories
+    - `_pb2.py`, `.g.dart`, `.generated.ts` suffixes
+    - File content markers (e.g., `@generated` docstrings)
+
+    **Example paths**:
+    - `src/__generated__/schema.ts`
+    - `proto/service_pb2.py`
+    - `lib/models.g.dart`
+  </Accordion>
+
+  <Accordion title="Script" icon="terminal">
+    **Intent**: Development scripts, utilities, automation.
+
+    **Detection policy**:
+    - Skip: `unused_exports`, `single_use`
+    - Downgrade: `structural` (low confidence)
+    - **Included in health score** (scripts ship with projects)
+
+    **Rationale**: Scripts are often one-off and don't follow production abstraction standards, but quality still matters.
+
+    **Classification rules**:
+    - `/scripts/`, `/bin/` directories
+    - Shebang detection (files starting with `#!/`)
+
+    **Example paths**:
+    - `scripts/migrate.py`
+    - `bin/deploy.sh`
+    - `tools/analyze.ts`
+  </Accordion>
+
+  <Accordion title="Vendor" icon="box">
+    **Intent**: Third-party dependencies, vendored libraries.
+
+    **Detection policy**:
+    - Skip: **All detectors**
+    - **Excluded from health score**
+
+    **Rationale**: You don't control vendor code quality. Don't waste scan time on it.
+
+    **Classification rules**:
+    - `/vendor/`, `/third_party/`, `/vendored/` directories
+    - `/node_modules/` (auto-excluded before scan, but zone-aware)
+
+    **Example paths**:
+    - `vendor/github.com/pkg/errors/errors.go`
+    - `third_party/jszip.min.js`
+  </Accordion>
+</AccordionGroup>
+
+## Pattern Matching
+
+Zone rules use **convention-based patterns** detected from shape:
+
+<CodeGroup>
+```python Directory pattern
+# Pattern: "/dir/"
+# Matched against: "/" + rel_path + "/"
+# Example: "/tests/" matches "tests/unit/foo.py"
+
+ZoneRule(Zone.TEST, ["/tests/", "/test/"])
+```
+
+```python Extension/suffix pattern
+# Pattern: ".ext" or ".compound.ext"
+# Matched: substring in basename
+# Example: ".test." matches "Button.test.tsx"
+
+ZoneRule(Zone.TEST, [".test.", ".spec."])
+```
+
+```python Prefix pattern
+# Pattern: "prefix_" (trailing underscore)
+# Matched: basename starts-with
+# Example: "test_" matches "test_utils.py"
+
+ZoneRule(Zone.TEST, ["test_"])
+```
+
+```python Exact basename
+# Pattern: "name.ext" (has extension, no "/")
+# Matched: basename exact match
+# Example: "conftest.py" matches only "conftest.py"
+
+ZoneRule(Zone.TEST, ["conftest.py", "setup_test.py"])
+```
+
+```python Substring fallback
+# Pattern: "config" (no special markers)
+# Matched: substring in full path
+# Example: "vite.config" matches "vite.config.ts"
+
+ZoneRule(Zone.CONFIG, ["vite.config", "eslintrc"])
+```
+</CodeGroup>
+
+**Implementation** (`desloppify/engine/policy/zones.py:60`):
+
+```python
+def _match_pattern(rel_path: str, pattern: str) -> bool:
+    """Match a zone pattern against a relative file path."""
+    basename = os.path.basename(rel_path)
+
+    # Directory pattern: "/dir/" → substring on padded path
+    if pattern.startswith("/") and pattern.endswith("/"):
+        return pattern in ("/" + rel_path + "/")
+
+    # Suffix/extension: starts with "." → contains on basename
+    if pattern.startswith("."):
+        return pattern in basename
+
+    # Prefix: ends with "_" → basename starts-with
+    if pattern.endswith("_"):
+        return basename.startswith(pattern)
+
+    # Suffix: starts with "_" → basename ends-with
+    if pattern.startswith("_"):
+        return basename.endswith(pattern)
+
+    # Exact basename: has extension, no "/"
+    if "/" not in pattern and "." in pattern:
+        ext = pattern.rsplit(".", 1)[-1]
+        if ext and len(ext) <= 5 and ext.isalnum():
+            return basename == pattern
+
+    # Fallback: substring on full path
+    return pattern in rel_path
+```
+
+## Language-Specific Rules
+
+Each language plugin defines its own zone rules:
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```python
+    ZONE_RULES = [
+        ZoneRule(Zone.VENDOR, ["/vendor/", "/third_party/"]),
+        ZoneRule(Zone.GENERATED, ["/generated/", "/__generated__/"]),
+        ZoneRule(Zone.TEST, [
+            "/tests/", "/test/", "/__tests__/",
+            ".test.", ".spec.",
+            "setupTests.ts", "jest.config.js"
+        ]),
+        ZoneRule(Zone.CONFIG, [
+            "vite.config", "tsconfig", "eslintrc", "prettierrc",
+            "webpack.config", "rollup.config", ".config."
+        ]),
+        ZoneRule(Zone.SCRIPT, ["/scripts/", "/bin/"]),
+    ]
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    ZONE_RULES = [
+        ZoneRule(Zone.VENDOR, ["/vendor/", "/third_party/"]),
+        ZoneRule(Zone.GENERATED, [
+            "/generated/", "/_generated/",
+            "_pb2.py", "_pb2_grpc.py"
+        ]),
+        ZoneRule(Zone.TEST, [
+            "/tests/", "/test/",
+            "test_", "_test.py",
+            "conftest.py", "setup_test.py"
+        ]),
+        ZoneRule(Zone.CONFIG, [
+            "setup.py", "pyproject.toml", "tox.ini",
+            "pytest.ini", "mypy.ini"
+        ]),
+        ZoneRule(Zone.SCRIPT, ["/scripts/", "/bin/"]),
+    ]
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```python
+    ZONE_RULES = [
+        ZoneRule(Zone.VENDOR, ["/vendor/", "/third_party/"]),
+        ZoneRule(Zone.GENERATED, [
+            "/generated/",
+            ".pb.go", ".gen.go"
+        ]),
+        ZoneRule(Zone.TEST, [
+            "_test.go",
+            "/testdata/"
+        ]),
+        ZoneRule(Zone.CONFIG, [
+            "go.mod", "go.sum",
+            "Makefile"
+        ]),
+        ZoneRule(Zone.SCRIPT, ["/scripts/"]),
+    ]
+    ```
+  </Tab>
+</Tabs>
+
+## Zone Overrides
+
+Manually override zone classification when path rules don't fit your project:
+
+<Steps>
+  <Step title="Set override">
+    ```bash
+    desloppify zone set src/legacy/adapter.ts vendor
+    ```
+
+    Marks `src/legacy/adapter.ts` as vendor code (excluded from scoring).
+  </Step>
+  <Step title="View zones">
+    ```bash
+    desloppify zone show
+    ```
+
+    Lists all files with their zones. Overrides marked with `(override)`.
+  </Step>
+  <Step title="Clear override">
+    ```bash
+    desloppify zone clear src/legacy/adapter.ts
+    ```
+
+    Removes manual override, falls back to pattern-based classification.
+  </Step>
+  <Step title="Re-scan">
+    ```bash
+    desloppify scan
+    ```
+
+    Applies new zone rules and re-evaluates findings.
+  </Step>
+</Steps>
+
+**Override storage**: `.desloppify/config.json`
+
+```json
+{
+  "zone_overrides": {
+    "src/legacy/adapter.ts": "vendor",
+    "scripts/demo.py": "production"
+  }
+}
+```
+
+## Detection Policy
+
+Each zone has a policy controlling which detectors run:
+
+```python
+# From zones.py:206
+ZONE_POLICIES: dict[Zone, ZonePolicy] = {
+    Zone.PRODUCTION: ZonePolicy(),
+    Zone.TEST: ZonePolicy(
+        skip_detectors={"unused_exports", "orphaned", "single_use"},
+        downgrade_detectors={"smells", "structural"},
+        exclude_from_score=True,
+    ),
+    Zone.CONFIG: ZonePolicy(
+        skip_detectors={"complexity", "large", "smells", "structural"},
+        exclude_from_score=True,
+    ),
+    Zone.GENERATED: ZonePolicy(
+        skip_detectors=SKIP_ALL_DETECTORS,
+        exclude_from_score=True,
+    ),
+    Zone.VENDOR: ZonePolicy(
+        skip_detectors=SKIP_ALL_DETECTORS,
+        exclude_from_score=True,
+    ),
+    Zone.SCRIPT: ZonePolicy(
+        skip_detectors={"unused_exports", "single_use"},
+        downgrade_detectors={"structural"},
+    ),
+}
+```
+
+**Policy effects**:
+- **skip_detectors**: Detector doesn't run; no findings created
+- **downgrade_detectors**: Detector runs but findings marked `confidence: low`
+- **exclude_from_score**: Findings don't affect health score (still tracked)
+
+## Zone Metadata Flow
+
+1. **Scan time**: Zone map built from file list + rules + overrides
+2. **Detection**: Detectors check zone policy, skip or downgrade as configured
+3. **Finding creation**: Zone stored in finding metadata (`zone: "test"`)
+4. **Scoring**: Findings with `zone in EXCLUDED_ZONES` don't count toward score
+5. **Review context**: LLM sees zone labels ("this file is a test, expect different standards")
+
+**Example finding**:
+
+```json
+{
+  "id": "complexity::high_cognitive::Button.test.tsx",
+  "detector": "complexity",
+  "file": "src/components/__tests__/Button.test.tsx",
+  "zone": "test",
+  "confidence": "low",
+  "tier": 3,
+  "summary": "High cognitive complexity (18)",
+  "excluded_from_score": true
+}
+```
+
+The `zone: "test"` and `excluded_from_score: true` metadata prevent this from hurting the health score.
+
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Monorepo test directories" icon="folder-tree">
+    ```
+    packages/
+      core/
+        src/
+          index.ts        → production
+        tests/
+          index.test.ts   → test
+      ui/
+        src/
+          Button.tsx      → production
+        __tests__/
+          Button.test.tsx → test
+    ```
+
+    Rule: `/tests/` and `/__tests__/` match at any depth.
+  </Accordion>
+
+  <Accordion title="Config in root" icon="file">
+    ```
+    vite.config.ts         → config
+    tsconfig.json          → config
+    eslint.config.js       → config
+    src/config/app.ts      → production (substring match not triggered)
+    ```
+
+    Exact basename rules prevent false positives in `src/config/` directories.
+  </Accordion>
+
+  <Accordion title="Generated protobuf" icon="code">
+    ```
+    proto/
+      service.proto         → production (or config)
+      service_pb2.py        → generated (_pb2.py suffix)
+      service_pb2_grpc.py   → generated
+    ```
+
+    Generated files excluded even if in production directories.
+  </Accordion>
+
+  <Accordion title="Scripts that ship" icon="box">
+    ```
+    scripts/
+      deploy.sh             → script (exclude single_use, but scored)
+    bin/
+      cli.ts                → script
+    src/
+      scripts/migrate.ts    → production (not in /scripts/ root)
+    ```
+
+    Scripts in `/scripts/` or `/bin/` get zone treatment. Scripts elsewhere are production.
+  </Accordion>
+</AccordionGroup>
+
+## Code References
+
+- Zone classification: `desloppify/engine/policy/zones.py`
+- Pattern matching: `zones.py:60`
+- Policy enforcement: `zones.py:206`
+- Zone command: `desloppify/app/commands/zone_cmd.py`
+- Skip detectors data: `desloppify/engine/policy/zones_data.py`
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/advanced/architecture">
+    How zones integrate with the detector pipeline
+  </Card>
+  <Card title="Review System" icon="microscope" href="/advanced/review-system">
+    Zone metadata in LLM review context
+  </Card>
+</CardGroup>

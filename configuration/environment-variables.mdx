@@ -1,0 +1,337 @@
+---
+title: Environment Variables
+description: Runtime configuration via environment variables
+---
+
+## Overview
+
+Desloppify supports environment variables for runtime configuration that shouldn't be committed to the project config file, such as:
+
+- Project root detection
+- Source directory paths
+- Scorecard generation overrides
+- Language-specific tool paths
+- Debug flags
+
+## Core Variables
+
+### DESLOPPIFY_ROOT
+
+**Type:** Path  
+**Default:** Current working directory
+
+Overrides the project root directory.
+
+```bash
+export DESLOPPIFY_ROOT=/path/to/project
+desloppify scan
+```
+
+**Use cases:**
+- Running Desloppify from outside the project directory
+- CI/CD pipelines with non-standard working directories
+- Multi-project workspaces
+
+### DESLOPPIFY_SRC
+
+**Type:** Path  
+**Default:** `src`
+
+Source directory for TypeScript alias resolution and language detection.
+
+```bash
+export DESLOPPIFY_SRC=source
+desloppify scan
+```
+
+**Use cases:**
+- Projects using `source/`, `lib/`, or other directory names
+- Custom TypeScript path mappings
+- Language detection hints
+
+## Scorecard Generation
+
+### DESLOPPIFY_NO_BADGE
+
+**Type:** Boolean  
+**Default:** `false`
+
+Disable scorecard image generation.
+
+**Accepted values:**
+- `true`, `TRUE`, `1`, `yes` → Disable badge
+- Any other value → Badge enabled
+
+```bash
+export DESLOPPIFY_NO_BADGE=true
+desloppify scan
+```
+
+**CLI equivalent:**
+```bash
+desloppify scan --no-badge
+```
+
+**Priority order:**
+1. CLI flag `--no-badge` (highest)
+2. Environment variable `DESLOPPIFY_NO_BADGE`
+3. Config file `generate_scorecard`
+4. Default (enabled)
+
+### DESLOPPIFY_BADGE_PATH
+
+**Type:** Path  
+**Default:** `scorecard.png`
+
+Output path for scorecard image.
+
+```bash
+export DESLOPPIFY_BADGE_PATH=assets/health.png
+desloppify scan
+```
+
+**CLI equivalent:**
+```bash
+desloppify scan --badge-path assets/health.png
+```
+
+**Priority order:**
+1. CLI flag `--badge-path` (highest)
+2. Environment variable `DESLOPPIFY_BADGE_PATH`
+3. Config file `badge_path`
+4. Default (`scorecard.png`)
+
+## Language-Specific Variables
+
+### C# / .NET (Roslyn)
+
+#### DESLOPPIFY_CSHARP_ROSLYN_CMD
+
+**Type:** Command string  
+**Default:** Auto-detected
+
+Custom Roslyn analyzer command for dependency graph extraction.
+
+```bash
+export DESLOPPIFY_CSHARP_ROSLYN_CMD="dotnet run --project tools/analyzer"
+desloppify scan --lang csharp
+```
+
+**Use cases:**
+- Custom Roslyn analyzer builds
+- Non-standard .NET SDK installations
+- CI/CD with containerized tools
+
+**CLI equivalent:**
+```bash
+desloppify scan --lang-opt roslyn_cmd="dotnet run --project tools/analyzer"
+```
+
+#### DESLOPPIFY_CSHARP_ROSLYN_TIMEOUT_SECONDS
+
+**Type:** Integer  
+**Default:** `60`
+
+Timeout for Roslyn analyzer execution.
+
+```bash
+export DESLOPPIFY_CSHARP_ROSLYN_TIMEOUT_SECONDS=120
+desloppify scan --lang csharp
+```
+
+#### DESLOPPIFY_CSHARP_ROSLYN_MAX_OUTPUT_BYTES
+
+**Type:** Integer  
+**Default:** `10485760` (10 MB)
+
+Max output size from Roslyn analyzer.
+
+```bash
+export DESLOPPIFY_CSHARP_ROSLYN_MAX_OUTPUT_BYTES=20971520  # 20 MB
+desloppify scan --lang csharp
+```
+
+#### DESLOPPIFY_CSHARP_ROSLYN_MAX_EDGES
+
+**Type:** Integer  
+**Default:** `10000`
+
+Maximum number of dependency edges to process.
+
+```bash
+export DESLOPPIFY_CSHARP_ROSLYN_MAX_EDGES=20000
+desloppify scan --lang csharp
+```
+
+### Review & AI
+
+#### DESLOPPIFY_AGENT
+
+**Type:** Boolean  
+**Default:** Auto-detected
+
+Forces agent-optimized output formatting.
+
+```bash
+export DESLOPPIFY_AGENT=1
+desloppify scan
+```
+
+**Auto-detected from:**
+- `CLAUDE_CODE` environment (Claude Code editor)
+- `DESLOPPIFY_AGENT` explicit flag
+
+**Effect:**
+- Enables structured scan output for AI agents
+- Modifies report formatting for LLM consumption
+- Shows agent-specific guidance
+
+#### DESLOPPIFY_CODEX_REASONING_EFFORT
+
+**Type:** String  
+**Default:** `low`  
+**Accepted values:** `low`, `medium`, `high`
+
+Controls reasoning depth when using Codex runner for subjective reviews.
+
+```bash
+export DESLOPPIFY_CODEX_REASONING_EFFORT=high
+desloppify review --run-batches --runner codex
+```
+
+**Impact:**
+- `low` - Faster, suitable for initial reviews
+- `medium` - Balanced speed and depth
+- `high` - Thorough analysis, slower execution
+
+## Debug & Development
+
+### DESLOPPIFY_DUPES_DEBUG
+
+**Type:** Boolean  
+**Default:** `false`
+
+Enable debug logging for duplicate detection.
+
+**Accepted values:**
+- `true`, `TRUE`, `1`, `yes` → Enable debug output
+
+```bash
+export DESLOPPIFY_DUPES_DEBUG=true
+desloppify scan
+```
+
+### DESLOPPIFY_DUPES_DEBUG_EVERY
+
+**Type:** Integer  
+**Default:** `100`
+
+Progress reporting interval when `DESLOPPIFY_DUPES_DEBUG` is enabled.
+
+```bash
+export DESLOPPIFY_DUPES_DEBUG=true
+export DESLOPPIFY_DUPES_DEBUG_EVERY=50
+desloppify scan
+```
+
+## Testing Variables
+
+### DESLOPPIFY_TEST_CSHARP_ROSLYN_CMD
+
+**Type:** Command string  
+**Default:** None
+
+Path to Roslyn analyzer for integration tests.
+
+```bash
+export DESLOPPIFY_TEST_CSHARP_ROSLYN_CMD="dotnet run --project tests/RoslynAnalyzer"
+pytest tests/lang/csharp/
+```
+
+**Used by:** C# integration tests that require real Roslyn analysis.
+
+## Priority & Precedence
+
+When multiple configuration sources define the same setting:
+
+1. **CLI flags** (highest priority)
+2. **Environment variables**
+3. **Config file** (`.desloppify/config.json`)
+4. **Language defaults**
+5. **Built-in defaults** (lowest priority)
+
+**Example:**
+
+```bash
+# All three set the badge path:
+export DESLOPPIFY_BADGE_PATH=env-badge.png  # Priority 2
+desloppify config set badge_path config-badge.png  # Priority 3
+desloppify scan --badge-path cli-badge.png  # Priority 1 (wins)
+
+# Result: cli-badge.png is used
+```
+
+## CI/CD Example
+
+```yaml .github/workflows/quality.yml
+name: Code Quality
+
+on: [push, pull_request]
+
+jobs:
+  desloppify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install Desloppify
+        run: pip install "desloppify[full]"
+      
+      - name: Run scan
+        env:
+          DESLOPPIFY_ROOT: ${{ github.workspace }}
+          DESLOPPIFY_NO_BADGE: true
+          DESLOPPIFY_AGENT: 1
+        run: |
+          desloppify scan --profile ci
+          desloppify status --json > quality-report.json
+      
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-report
+          path: quality-report.json
+```
+
+## Docker Example
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+# Install Desloppify
+RUN pip install "desloppify[full]"
+
+# Set environment defaults
+ENV DESLOPPIFY_ROOT=/workspace
+ENV DESLOPPIFY_SRC=src
+ENV DESLOPPIFY_BADGE_PATH=/output/scorecard.png
+
+# Copy project
+COPY . /workspace/
+
+# Run scan
+CMD ["desloppify", "scan", "--profile", "ci"]
+```
+
+## Related Topics
+
+- [Project Configuration](/configuration/project-config) - Persistent settings in config.json
+- [Exclusions](/configuration/exclusions) - Path filtering patterns
+- CLI Commands - Runtime flags and options

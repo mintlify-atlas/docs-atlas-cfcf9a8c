@@ -1,0 +1,459 @@
+---
+title: "AI Coding Agents"
+description: "Integrate Desloppify with AI coding agents to systematically improve codebase quality"
+icon: "robot"
+---
+
+## Overview
+
+Desloppify is designed to work seamlessly with AI coding agents. The main use case is having your agent iteratively improve your codebase quality by following Desloppify's guided workflow.
+
+<Note>
+  **The key insight**: AI agents are excellent at fixing code quality issues when given clear, prioritized guidance. Desloppify provides the framework to keep them on track.
+</Note>
+
+## Quick Start for Agents
+
+Paste this prompt into your AI coding agent:
+
+```
+I want you to improve the quality of this codebase. To do this, install and run desloppify.
+Run ALL of the following (requires Python 3.11+):
+
+pip install --upgrade "desloppify[full]"
+desloppify update-skill claude    # IMPORTANT — installs the workflow guide. Pick yours: claude, cursor, codex, copilot, windsurf, gemini
+desloppify scan --path .
+desloppify next
+
+--path is the directory to scan (use "." for the whole project, or "src/" etc).
+
+Your goal is to get the strict score that Desloppify produces as high as possible. Don't be lazy. Fix things properly
+and fix things deep. Large refactors are fine if that's what it takes but also small fixes are great. The scoring is designed
+to resist gaming, so the only way to improve it is to actually make the code better. Don't cheat.
+
+Follow `next` — it tells you exactly what to fix, which file, and the resolve command to run
+when done. Fix the issue, resolve it, run `next` again. Keep going until done.
+Use `plan` to reorder priorities or cluster related issues.
+You can scan to refresh things. The scan output includes agent instructions — follow them, don't augment with your own analysis but follow its plan.
+```
+
+## The update-skill Command
+
+The `update-skill` command installs agent-specific workflow instructions that tell your agent how to work with Desloppify effectively.
+
+<Steps>
+  <Step title="Install the skill">
+    Run the command for your agent:
+    
+    <CodeGroup>
+    ```bash Claude
+    desloppify update-skill claude
+    ```
+    
+    ```bash Cursor
+    desloppify update-skill cursor
+    ```
+    
+    ```bash OpenCode/Codex
+    desloppify update-skill codex
+    ```
+    
+    ```bash GitHub Copilot
+    desloppify update-skill copilot
+    ```
+    
+    ```bash Windsurf
+    desloppify update-skill windsurf
+    ```
+    
+    ```bash Gemini
+    desloppify update-skill gemini
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Skill is installed">
+    The skill file is written to your agent's configuration directory (e.g., `.claude/skills/desloppify.md` for Claude).
+    
+    Your agent now knows:
+    - The core workflow loop (scan → next → fix → resolve)
+    - How to use the `plan` command strategically
+    - When to run subjective reviews
+    - How to interpret scoring
+  </Step>
+  
+  <Step title="Agent starts working">
+    Your agent will automatically follow the Desloppify workflow when you ask it to improve code quality.
+  </Step>
+</Steps>
+
+## The Agent Workflow
+
+Once the skill is installed, your agent follows this loop:
+
+### Outer Loop: Scan and Check
+
+```bash
+desloppify scan --path .       # Analyze the codebase
+desloppify status              # Check scores
+```
+
+If not at target, work the inner loop. Rescan periodically — especially after clearing a cluster or batch of related fixes.
+
+### Inner Loop: Fix Issues
+
+Repeat until the queue is clear:
+
+<Steps>
+  <Step title="Get next issue">
+    ```bash
+    desloppify next
+    ```
+    
+    This tells you exactly what to fix next, prioritized by impact.
+  </Step>
+  
+  <Step title="Fix the issue">
+    Make the necessary code changes. The agent reads the file, understands the problem, and implements the fix.
+  </Step>
+  
+  <Step title="Resolve it">
+    ```bash
+    desloppify resolve fixed <pattern>
+    ```
+    
+    Mark the issue as fixed. The `next` command shows you the exact resolve command with the required attestation.
+  </Step>
+  
+  <Step title="Repeat">
+    Run `desloppify next` again to get the next issue.
+  </Step>
+</Steps>
+
+## Strategic Planning
+
+For complex codebases, agents can use the `plan` command to work strategically:
+
+<CodeGroup>
+```bash View the plan
+desloppify plan
+```
+
+```bash Reorder priorities
+desloppify plan move <pattern> top
+```
+
+```bash Create a cluster
+desloppify plan cluster create refactor-auth
+```
+
+```bash Focus on a cluster
+desloppify plan focus refactor-auth
+```
+
+```bash Defer low-value items
+desloppify plan defer <pattern>
+```
+</CodeGroup>
+
+## Subjective Reviews
+
+Desloppify includes subjective quality assessments (naming, abstractions, error handling, etc.) that require LLM review.
+
+### Automated Reviews (Recommended)
+
+The easiest path is to let Desloppify run the review automatically:
+
+```bash
+desloppify review --run-batches --runner codex --parallel --scan-after-import
+```
+
+This:
+- Splits dimensions across parallel review sessions
+- Scores each dimension independently
+- Merges results and imports them
+- Rescans to update the score
+
+### Agent-Specific Review Workflows
+
+<AccordionGroup>
+  <Accordion title="Claude">
+    **Preferred**: Use the automated batch runner
+    
+    ```bash
+    desloppify review --run-batches --runner codex --parallel --scan-after-import
+    ```
+    
+    **Cloud path**: For context isolation
+    
+    ```bash
+    desloppify review --external-start --external-runner claude
+    ```
+    
+    This generates:
+    - `claude_launch_prompt.md` — paste this into a new Claude conversation
+    - `review_result.template.json` — Claude fills this out
+    
+    Then submit:
+    
+    ```bash
+    desloppify review --external-submit --session-id <id> --import <file>
+    ```
+    
+    **Manual path**: Use Claude subagents with `context: fork` to split dimensions across multiple agents.
+  </Accordion>
+  
+  <Accordion title="Cursor">
+    Define a reviewer agent in `.cursor/agents/desloppify-reviewer.md`:
+    
+    ```markdown
+    ---
+    name: desloppify-reviewer
+    description: Scores subjective codebase quality dimensions for desloppify
+    tools:
+      - read
+      - search
+    ---
+    
+    You are a code quality reviewer. You will be given a codebase path, a set of
+    dimensions to score, and what each dimension means. Read the code, score each
+    dimension 0-100 from evidence only, and return JSON in the required format.
+    Do not anchor to target thresholds. When evidence is mixed, score lower and
+    explain uncertainty.
+    ```
+    
+    Then run parallel reviews and merge results.
+  </Accordion>
+  
+  <Accordion title="GitHub Copilot">
+    Define agents in `.github/agents/`:
+    
+    **Reviewer**: `.github/agents/desloppify-reviewer.md`
+    
+    ```yaml
+    ---
+    name: desloppify-reviewer
+    tools: ['read', 'search']
+    ---
+    You are a code quality reviewer. You will be given a codebase path, a set of
+    dimensions to score, and what each dimension means. Read the code, score each
+    dimension 0-100 from evidence only, and return JSON in the required format.
+    Do not anchor to target thresholds. When evidence is mixed, score lower and
+    explain uncertainty.
+    ```
+    
+    **Orchestrator**: `.github/agents/desloppify-review-orchestrator.md`
+    
+    ```yaml
+    ---
+    name: desloppify-review-orchestrator
+    tools: ['agent', 'read', 'search']
+    agents: ['desloppify-reviewer']
+    ---
+    ```
+    
+    Copilot runs reviewer agents concurrently across dimensions.
+  </Accordion>
+  
+  <Accordion title="Windsurf">
+    Windsurf doesn't support spawning subagents from Cascade sessions.
+    
+    **Preferred**: Use the automated batch runner
+    
+    ```bash
+    desloppify review --run-batches --runner codex --parallel --scan-after-import
+    ```
+    
+    **Manual**: Ask the user to open multiple Cascade panes. Split dimensions across 2-3 panes, review independently, then merge results.
+  </Accordion>
+</AccordionGroup>
+
+## Review Integrity
+
+To ensure unbiased subjective reviews:
+
+<Warning>
+  1. **No score anchoring**: Reviewers should score from evidence only, not target thresholds
+  2. **No context leaking**: Use forked/isolated agent contexts for reviews
+  3. **Mixed evidence scores lower**: When evidence is inconsistent, score conservatively
+  4. **Exact schema match**: Review findings must match the `query.json` schema exactly
+</Warning>
+
+The review import is fail-closed by default — invalid findings abort the import unless you pass `--allow-partial`.
+
+## Supported Agents
+
+<CardGroup cols={3}>
+  <Card title="Claude" icon="message">
+    Native subagent support with context forking
+  </Card>
+  
+  <Card title="Cursor" icon="cursor">
+    Agent definitions in `.cursor/agents/`
+  </Card>
+  
+  <Card title="GitHub Copilot" icon="github">
+    Agent definitions in `.github/agents/`
+  </Card>
+  
+  <Card title="OpenCode/Codex" icon="code">
+    Built-in batch review runner
+  </Card>
+  
+  <Card title="Windsurf" icon="wind">
+    Manual multi-pane workflow
+  </Card>
+  
+  <Card title="Gemini" icon="gem">
+    Standard CLI integration
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Let the agent work strategically">
+    Don't micromanage. Let the agent use `plan` to cluster related issues and work in batches.
+    
+    Example: If there are 10 similar naming issues, the agent can cluster them and fix all at once.
+  </Accordion>
+  
+  <Accordion title="Trust the scoring">
+    The score is designed to resist gaming. If the agent tries to game it (e.g., marking things wontfix to boost the lenient score), the strict score will reveal the debt.
+    
+    Always optimize for **strict score**, not overall score.
+  </Accordion>
+  
+  <Accordion title="Expect temporary score drops">
+    After big refactors, the score may temporarily drop due to cascade effects (new issues surfacing, dependencies changing).
+    
+    This is normal. Keep working the queue.
+  </Accordion>
+  
+  <Accordion title="Rescan periodically">
+    After clearing a cluster or making structural changes, rescan to refresh the issue queue.
+    
+    ```bash
+    desloppify scan --path .
+    ```
+    
+    Issues cascade-resolve and new ones may surface.
+  </Accordion>
+  
+  <Accordion title="Use auto-fixers when suggested">
+    If `next` suggests an auto-fixer, preview it first:
+    
+    ```bash
+    desloppify fix <fixer> --dry-run
+    ```
+    
+    Then apply:
+    
+    ```bash
+    desloppify fix <fixer>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Example Session
+
+Here's what a typical agent session looks like:
+
+```bash
+# Install and initialize
+pip install --upgrade "desloppify[full]"
+desloppify update-skill claude
+desloppify scan --path .
+
+# Check status
+desloppify status
+# Shows: Strict score: 72.3 / Target: 95.0
+
+# Get next issue
+desloppify next
+# Shows: T2 | unused_exports | src/utils/helpers.ts:42 | exportedButNeverImported
+
+# Agent fixes it (removes the unused export)
+# Then resolves:
+desloppify resolve fixed src/utils/helpers.ts:42
+
+# Get next issue
+desloppify next
+# Shows: T3 | duplicate_code | src/auth/*.ts | 3 near-duplicate functions
+
+# Agent clusters related duplication issues
+desloppify plan cluster create auth-deduplication
+desloppify plan focus auth-deduplication
+
+# Agent fixes all duplication in the auth module
+# Then resolves:
+desloppify resolve fixed "src/auth/*"
+
+# Rescan to check progress
+desloppify scan --path .
+desloppify status
+# Shows: Strict score: 84.1 / Target: 95.0
+
+# Continue until target reached...
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Agent is ignoring the workflow">
+    Make sure you ran `desloppify update-skill <agent-name>` to install the skill.
+    
+    The skill file should exist at:
+    - Claude: `.claude/skills/desloppify.md`
+    - Cursor: `.cursor/skills/desloppify.md`
+    - Copilot: `.github/copilot-instructions.md` (appended)
+  </Accordion>
+  
+  <Accordion title="Subjective review fails">
+    Check that the review JSON matches the schema exactly:
+    
+    ```json
+    {
+      "assessments": {
+        "naming_quality": 75,
+        "error_consistency": 80,
+        "abstraction_fit": 70,
+        "logic_clarity": 85,
+        "ai_generated_debt": 60
+      },
+      "findings": [
+        {
+          "dimension": "naming_quality",
+          "identifier": "short_id",
+          "summary": "one-line defect summary",
+          "related_files": ["relative/path/to/file.py"],
+          "evidence": ["specific code observation"],
+          "suggestion": "concrete fix recommendation",
+          "confidence": "high"
+        }
+      ]
+    }
+    ```
+    
+    Use `--allow-partial` to accept partial results if needed.
+  </Accordion>
+  
+  <Accordion title="Score isn't improving">
+    1. Check that you're resolving issues after fixing them
+    2. Run `desloppify scan --path .` to refresh
+    3. Look at the strict score, not just overall score
+    4. Use `desloppify show --status open` to see all open issues
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CI/CD Integration" icon="github" href="/integration/ci-cd">
+    Run Desloppify in your CI pipeline to enforce quality gates
+  </Card>
+  
+  <Card title="Workflows" icon="diagram-project" href="/integration/workflows">
+    Example workflows for different scenarios
+  </Card>
+</CardGroup>

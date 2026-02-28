@@ -1,0 +1,187 @@
+---
+title: 'desloppify scan'
+description: 'Run all detectors, update state, and show diff'
+icon: 'magnifying-glass'
+---
+
+## Overview
+
+The `scan` command is the primary analysis command in Desloppify. It runs all configured detectors against your codebase, updates the persistent state, and displays a diff showing new, resolved, and reopened findings.
+
+## Basic Usage
+
+```bash
+desloppify scan
+```
+
+This runs a full scan with auto-detected language and default settings.
+
+## Command Options
+
+### Project Configuration
+
+<ParamField path="--path" type="string">
+  Project root directory. If not specified, Desloppify auto-detects the project root.
+</ParamField>
+
+<ParamField path="--state" type="string">
+  Path to state file. By default, state is stored in `.desloppify/state.json`.
+</ParamField>
+
+<ParamField path="--lang" type="string">
+  Language to scan (e.g., `python`, `typescript`, `csharp`). Auto-detected if omitted.
+</ParamField>
+
+<ParamField path="--exclude" type="string">
+  Path pattern to exclude from scanning (component/prefix match). Can be repeated for multiple patterns.
+  
+  Example: `--exclude node_modules --exclude dist`
+</ParamField>
+
+### Scan Profiles
+
+<ParamField path="--profile" type="string">
+  Scan profile to use. Available options:
+  
+  - `objective` - Only objective detectors (no subjective review dimensions)
+  - `full` - All detectors including slow ones (default)
+  - `ci` - Optimized for CI environments
+</ParamField>
+
+<ParamField path="--skip-slow" type="boolean">
+  Skip slow detectors (e.g., duplicate code detection). Useful for quick feedback loops.
+</ParamField>
+
+### Subjective Measures
+
+<ParamField path="--reset-subjective" type="boolean">
+  Reset subjective measures to 0 before running scan. Use this when you want to re-evaluate subjective dimensions from scratch.
+</ParamField>
+
+### Advanced Options
+
+<ParamField path="--force-resolve" type="boolean">
+  Bypass suspect-detector protection. Use when a detector legitimately went to 0 findings (e.g., you fixed all issues of a type).
+</ParamField>
+
+<ParamField path="--no-badge" type="boolean">
+  Skip scorecard image generation. Also controlled by `DESLOPPIFY_NO_BADGE=true` environment variable.
+</ParamField>
+
+<ParamField path="--badge-path" type="string">
+  Output path for scorecard image. Default: `scorecard.png`
+</ParamField>
+
+<ParamField path="--lang-opt" type="string">
+  Language runtime option override. Repeatable.
+  
+  Example: `--lang-opt roslyn_cmd='dotnet run ...'`
+</ParamField>
+
+## Examples
+
+### Quick scan (skip slow detectors)
+
+```bash
+desloppify scan --skip-slow
+```
+
+### CI scan
+
+```bash
+desloppify scan --profile ci --no-badge
+```
+
+### Python-only scan with custom path
+
+```bash
+desloppify scan --lang python --path /path/to/project
+```
+
+### Reset subjective scores and run full scan
+
+```bash
+desloppify scan --reset-subjective
+```
+
+### Force resolve when detector went to zero
+
+```bash
+desloppify scan --force-resolve
+```
+
+## Output
+
+The scan command outputs:
+
+1. **Scan header** - Language and scan type
+2. **Coverage preflight warnings** - If scan coverage is reduced for any detector
+3. **Scan progress** - Real-time detector execution
+4. **Scan complete banner**
+5. **Diff summary** - New, auto-resolved, and reopened findings
+6. **Score delta** - Changes in overall, objective, strict, and verified scores
+7. **Dimension scores** - Breakdown by quality dimension
+8. **Post-scan analysis** - Warnings and narrative context
+9. **LLM summary** - AI-generated insights and next steps
+
+### Example Output
+
+```bash
+Desloppify Scan (python)
+
+  Scan complete
+  ──────────────────────────────────────────────────
+
+  Findings: +12 new, 0 auto-resolved, 0 reopened
+
+  Overall Score:    87.5 → 85.2 (-2.3)
+  Objective Score:  82.1 → 79.8 (-2.3)
+  Strict Score:     82.1 → 79.8 (-2.3)
+  Target:           95.0 (gap: 15.2)
+
+  Dimensions:
+    Code Quality     90.2 → 88.5 (-1.7)
+    Security        100.0 → 95.0 (-5.0)  ⚠️
+    Dead Code        78.3 → 76.1 (-2.2)
+
+  → Next: Address 3 new security findings in auth module
+```
+
+## State Management
+
+The scan command:
+
+- Updates `.desloppify/state.json` with latest findings
+- Tracks finding history (open → resolved → reopened)
+- Maintains dimension scores and codebase metrics
+- Records scan timestamps and increments scan count
+
+## Integration
+
+### CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Run Desloppify Scan
+  run: desloppify scan --profile ci --no-badge
+```
+
+### Pre-commit Hook
+
+```bash
+#!/bin/sh
+desloppify scan --skip-slow
+```
+
+## Related Commands
+
+- [`status`](/commands/status) - View current score dashboard
+- [`next`](/commands/next) - See next highest-priority item
+- [`show`](/commands/show) - Dig into specific findings
+- [`review`](/commands/review) - Run subjective LLM-based review
+
+## See Also
+
+- [Scan Profiles](/concepts/scan-profiles)
+- [Detectors](/concepts/detectors)
+- [State Management](/concepts/state)

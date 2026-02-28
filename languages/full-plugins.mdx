@@ -1,0 +1,526 @@
+---
+title: Full Language Plugins
+description: Deep dive into the 6 full plugins with custom detectors, auto-fixers, and language-specific smell analysis
+---
+
+Full plugins are multi-module packages with hand-written detector phases, language-specific smell analysis, auto-fixers, and custom subjective review dimensions.
+
+## Architecture
+
+Full plugins follow a standardized structure:
+
+```
+languages/<name>/
+├── __init__.py          # LangConfig class with @register_lang() decorator
+├── commands.py          # CLI command builders (detect, fix, refactor)
+├── extractors.py        # File discovery + function/class extraction
+├── phases.py            # Detector phase definitions
+├── move.py              # Refactoring helpers (import rewriting)
+├── review.py            # Subjective review dimensions
+├── test_coverage.py     # Test coverage hooks
+├── detectors/           # Individual detector modules
+│   ├── __init__.py
+│   ├── smells.py        # Language-specific code smells
+│   ├── deps.py          # Dependency graph builder
+│   ├── security.py      # Security-specific detectors
+│   └── ...
+├── fixers/              # Auto-fixer implementations
+│   ├── __init__.py
+│   └── ...
+└── tests/               # Plugin test suite
+    └── ...
+```
+
+## The Six Full Plugins
+
+<Tabs>
+  <Tab title="Python">
+    ### Python Plugin
+
+    **Path**: `desloppify/languages/python/`
+
+    #### Key Capabilities
+
+    - **15+ detector phases**: Unused code, structural analysis, cohesion, coupling, uncalled functions, test coverage, code smells, mutable state, security, private imports, layer violations, dict key flow
+    - **External tool adapters**: ruff (linting), bandit (security), import-linter (boundaries)
+    - **Custom smell detectors**:
+      - Mutable class variables (list/dict defaults)
+      - `lru_cache` on methods with mutable arguments
+      - Subprocess calls without timeouts
+      - Naive regex backtracking risks
+      - Bare `except:` clauses
+      - String concatenation in loops
+    - **Security analysis**: Shell injection, SQL injection, unsafe deserialization, pickle usage
+    - **Auto-fixers**: Import rewriting, unused code removal
+
+    #### Configuration Example
+
+    ```python desloppify/languages/python/__init__.py
+    @register_lang("python")
+    class PythonConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="python",
+                extensions=[".py"],
+                exclusions=["__pycache__", ".venv", "node_modules"],
+                phases=[
+                    DetectorPhase("Unused (ruff)", phase_unused),
+                    DetectorPhase("Structural analysis", phase_structural),
+                    DetectorPhase("Responsibility cohesion", phase_responsibility_cohesion),
+                    DetectorPhase("Coupling + cycles + orphaned", phase_coupling),
+                    DetectorPhase("Uncalled functions", phase_uncalled_functions),
+                    detector_phase_test_coverage(),
+                    DetectorPhase("Code smells", phase_smells),
+                    DetectorPhase("Mutable state", phase_mutable_state),
+                    detector_phase_security(),
+                    DetectorPhase("Private imports", phase_private_imports),
+                    DetectorPhase("Layer violations", phase_layer_violation),
+                    DetectorPhase("Dict key flow", phase_dict_keys),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                detect_markers=["pyproject.toml", "setup.py", "setup.cfg"],
+                build_dep_graph=build_dep_graph,
+                # ... more config
+            )
+    ```
+
+    #### Zone Rules
+
+    Python files are automatically classified into zones:
+
+    | Zone | Patterns |
+    |------|----------|
+    | GENERATED | `/migrations/`, `_pb2.py`, `_pb2_grpc.py` |
+    | TEST | `test_*.py`, `*_test.py`, `conftest.py`, `/factories/` |
+    | CONFIG | `setup.py`, `pyproject.toml`, `settings.py`, `manage.py`, `wsgi.py` |
+    | SCRIPT | `__main__.py`, `/commands/` |
+
+    #### Usage
+
+    ```bash
+    # Scan Python codebase
+    desloppify scan --lang python
+
+    # Check security coverage
+    desloppify scan --lang python --show-coverage
+
+    # Fix unused imports
+    desloppify fix unused-imports
+    ```
+
+    <Warning>
+      **Bandit dependency**: Python security checks require `bandit` to be installed. Without it, coverage is reduced to cross-language patterns only.
+    </Warning>
+  </Tab>
+
+  <Tab title="TypeScript">
+    ### TypeScript/React Plugin
+
+    **Path**: `desloppify/languages/typescript/`
+
+    #### Key Capabilities
+
+    - **React-aware detectors**: Hook dependency violations, stale closures, prop drilling, component lifecycle
+    - **7 auto-fixers**:
+      1. Unused imports
+      2. Unused variables
+      3. Unused parameters (prefix with `_`)
+      4. Debug logs (console.log removal)
+      5. Dead useEffect calls
+      6. Empty if/else chains
+      7. Import rewriting
+    - **Dead export detection**: Uses knip to find unused exports
+    - **Deprecated API tracking**: Detects usage of deprecated functions/components
+    - **Concerns separation**: Identifies mixed responsibilities in components
+    - **Facade pattern detection**: Finds barrel files that re-export everything
+
+    #### Configuration Example
+
+    ```python desloppify/languages/typescript/__init__.py
+    @register_lang("typescript")
+    class TypeScriptConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="typescript",
+                extensions=[".ts", ".tsx"],
+                exclusions=["node_modules", ".d.ts"],
+                phases=[
+                    DetectorPhase("Logs", phase_logs),
+                    DetectorPhase("Unused (tsc)", phase_unused),
+                    DetectorPhase("Dead exports", phase_exports),
+                    DetectorPhase("Deprecated", phase_deprecated),
+                    DetectorPhase("Structural analysis", phase_structural),
+                    DetectorPhase("Coupling + single-use + patterns + naming", phase_coupling),
+                    *_ts_treesitter_phases(),  # Optional cohesion analysis
+                    detector_phase_signature(),
+                    detector_phase_test_coverage(),
+                    DetectorPhase("Code smells", phase_smells),
+                    detector_phase_security(),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                fixers=_get_ts_fixers(),  # 7 auto-fixers
+                detect_markers=["package.json"],
+                barrel_names={"index.ts", "index.tsx"},
+                # ... more config
+            )
+    ```
+
+    #### React Smell Examples
+
+    ```typescript
+    // Dead useEffect (deps never change)
+    useEffect(() => {
+      console.log('This runs once');
+    }, []);  // Desloppify: dead_useeffect
+
+    // Stale closure (missing dep)
+    useEffect(() => {
+      console.log(userId);  // Uses userId but not in deps
+    }, []);  // Desloppify: stale_closure
+
+    // Prop drilling (5+ levels deep)
+    <Parent userId={userId}>
+      <Child userId={userId}>
+        <GrandChild userId={userId} />  // Desloppify: prop_drilling
+      </Child>
+    </Parent>
+    ```
+
+    #### Zone Rules
+
+    | Zone | Patterns |
+    |------|----------|
+    | GENERATED | `.d.ts`, `/migrations/` |
+    | TEST | `/__tests__/`, `.test.`, `.spec.`, `.stories.`, `setupTests.` |
+    | CONFIG | `vite.config`, `tailwind.config`, `tsconfig`, `eslint`, `jest.config` |
+
+    #### Usage
+
+    ```bash
+    # Scan TypeScript project
+    desloppify scan --lang typescript
+
+    # Fix unused imports
+    desloppify fix unused-imports
+
+    # Remove debug logs
+    desloppify fix debug-logs
+
+    # Prefix unused params with _
+    desloppify fix unused-params
+    ```
+  </Tab>
+
+  <Tab title="C#">
+    ### C#/.NET Plugin
+
+    **Path**: `desloppify/languages/csharp/`
+
+    #### Key Capabilities
+
+    - **Structural analysis**: Class coupling, namespace boundaries, SOLID violations
+    - **dotnet-based dependency analysis**: Uses `dotnet list package --include-transitive`
+    - **Security detectors**: SQL injection (unsafe string concat), XSS risks, cryptography misuse
+    - **LINQ pattern detection**: Inefficient queries, N+1 problems
+    - **Disposable leak detection**: Missing `using` statements
+    - **Async/await misuse**: `.Result`/`.Wait()` deadlock risks
+
+    #### Configuration Example
+
+    ```python desloppify/languages/csharp/__init__.py
+    @register_lang("csharp")
+    class CSharpConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="csharp",
+                extensions=[".cs"],
+                exclusions=["bin/", "obj/", ".vs/"],
+                phases=[
+                    DetectorPhase("Structural analysis", _phase_structural),
+                    DetectorPhase("Coupling + cycles + orphaned", _phase_coupling),
+                    *all_treesitter_phases("csharp"),  # AST-based analysis
+                    detector_phase_signature(),
+                    detector_phase_test_coverage(),
+                    detector_phase_security(),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                detect_markers=["*.csproj", "*.sln"],
+                build_dep_graph=build_csharp_dep_graph,
+                # ... more config
+            )
+    ```
+
+    #### Zone Rules
+
+    | Zone | Patterns |
+    |------|----------|
+    | TEST | `.Test.cs`, `.Tests.cs`, `/Tests/`, `Test.csproj` |
+    | CONFIG | `Program.cs`, `Startup.cs`, `appsettings.json` |
+    | GENERATED | `/Migrations/`, `.Designer.cs`, `.g.cs` |
+
+    #### Usage
+
+    ```bash
+    # Scan C# solution
+    desloppify scan --lang csharp
+
+    # Check namespace boundaries
+    desloppify scan --lang csharp --check-boundaries
+    ```
+  </Tab>
+
+  <Tab title="Dart">
+    ### Dart/Flutter Plugin
+
+    **Path**: `desloppify/languages/dart/`
+
+    #### Key Capabilities
+
+    - **Flutter-aware analysis**: Widget tree depth, StatefulWidget patterns, BuildContext usage
+    - **pubspec.yaml integration**: Dependency version conflicts, unused dependencies
+    - **Test coverage mapping**: Finds test files for each widget/class
+    - **State management patterns**: BLoC, Provider, Riverpod detection
+    - **Widget complexity**: Detects deeply nested widget trees
+
+    #### Configuration Example
+
+    ```python desloppify/languages/dart/__init__.py
+    @register_lang("dart")
+    class DartConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="dart",
+                extensions=[".dart"],
+                exclusions=[".dart_tool/", "build/"],
+                phases=[
+                    DetectorPhase("Structural analysis", _phase_structural),
+                    DetectorPhase("Coupling + deps", _phase_coupling),
+                    *all_treesitter_phases("dart"),
+                    detector_phase_test_coverage(),
+                    detector_phase_security(),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                detect_markers=["pubspec.yaml"],
+                # ... more config
+            )
+    ```
+
+    #### Zone Rules
+
+    | Zone | Patterns |
+    |------|----------|
+    | TEST | `_test.dart`, `/test/`, `/tests/` |
+    | CONFIG | `pubspec.yaml`, `analysis_options.yaml` |
+    | GENERATED | `.g.dart`, `.freezed.dart` |
+  </Tab>
+
+  <Tab title="GDScript">
+    ### GDScript/Godot Plugin
+
+    **Path**: `desloppify/languages/gdscript/`
+
+    #### Key Capabilities
+
+    - **Godot scene-aware**: Validates node paths, scene references, autoload scripts
+    - **Signal validation**: Checks signal connections and emissions
+    - **Tree-sitter phases**: Function extraction, import parsing, complexity metrics
+    - **Script dependency graph**: Maps script inheritance and composition
+    - **Resource path validation**: Checks `preload()` and `load()` paths
+
+    #### Configuration Example
+
+    ```python desloppify/languages/gdscript/__init__.py
+    @register_lang("gdscript")
+    class GdscriptConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="gdscript",
+                extensions=[".gd"],
+                exclusions=[".godot/", ".import/"],
+                phases=[
+                    DetectorPhase("Structural analysis", _phase_structural),
+                    DetectorPhase("Coupling + cycles + orphaned", _phase_coupling),
+                    *all_treesitter_phases("gdscript"),
+                    detector_phase_signature(),
+                    detector_phase_test_coverage(),
+                    detector_phase_security(),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                detect_markers=["project.godot"],
+                # ... more config
+            )
+    ```
+
+    #### Zone Rules
+
+    | Zone | Patterns |
+    |------|----------|
+    | TEST | `/tests/`, `/test/`, `test_*.gd`, `*_test.gd` |
+    | CONFIG | `/project.godot`, `/.godot/`, `/addons/` |
+    | GENERATED | `/.import/`, `.import`, `.uid` |
+  </Tab>
+
+  <Tab title="Go">
+    ### Go Plugin
+
+    **Path**: `desloppify/languages/go/`
+
+    #### Key Capabilities
+
+    - **golangci-lint adapter**: Runs 50+ Go linters (staticcheck, gosec, govet, etc.)
+    - **go vet integration**: Type checking and suspicious code detection
+    - **Regex function extraction**: Parses `func` declarations for duplicate detection
+    - **Test coverage mapping**: Maps `_test.go` files to source files
+    - **Package dependency analysis**: Import graph with cycle detection
+
+    #### Configuration Example
+
+    ```python desloppify/languages/go/__init__.py
+    @register_lang("go")
+    class GoConfig(LangConfig):
+        def __init__(self):
+            super().__init__(
+                name="go",
+                extensions=[".go"],
+                exclusions=["vendor/", "_test.go"],
+                phases=[
+                    DetectorPhase("Structural analysis", _phase_structural),
+                    make_tool_phase("golangci-lint", "golangci-lint run --out-format=json", "golangci", "golangci_lint", tier=2),
+                    make_tool_phase("go vet", "go vet ./...", "gnu", "vet_error", tier=3),
+                    *all_treesitter_phases("go"),
+                    detector_phase_signature(),
+                    detector_phase_test_coverage(),
+                    detector_phase_security(),
+                    *shared_subjective_duplicates_tail(),
+                ],
+                detect_markers=["go.mod"],
+                # ... more config
+            )
+    ```
+
+    #### Zone Rules
+
+    | Zone | Patterns |
+    |------|----------|
+    | TEST | `_test.go` |
+
+    #### Usage
+
+    ```bash
+    # Scan Go module
+    desloppify scan --lang go
+
+    # Run only golangci-lint
+    desloppify scan --lang go --detector golangci-lint
+    ```
+  </Tab>
+</Tabs>
+
+## Shared Phase Builders
+
+Full plugins reuse framework utilities from `languages/_framework/base/phase_builders.py`:
+
+```python
+# Security analysis (cross-language patterns)
+detector_phase_security()
+
+# Test coverage (import-based + naming conventions)
+detector_phase_test_coverage()
+
+# Signature variance (parameter count, return types)
+detector_phase_signature()
+
+# Subjective review + duplicates + boilerplate
+shared_subjective_duplicates_tail()
+```
+
+## Detector Phase Contract
+
+Each phase is a function that receives `LangRun` (mutable execution state) and returns findings:
+
+```python
+def phase_smells(run: LangRun) -> list[DetectionEntry]:
+    """Detect language-specific code smells."""
+    findings = []
+    for filepath in run.files:
+        # Read file, analyze, emit findings
+        findings.extend(detect_smells_in_file(filepath))
+    return findings
+```
+
+## Auto-Fixer Contract
+
+Fixers receive entries and optionally modify files:
+
+```python
+def fix_unused_imports(entries: list[dict], *, dry_run=False) -> FixResult:
+    """Remove unused imports from files."""
+    results = []
+    for entry in entries:
+        if not dry_run:
+            remove_import(entry["file"], entry["line"])
+        results.append({"file": entry["file"], "removed": entry["import"]})
+    return FixResult(entries=results, skip_reasons=[])
+```
+
+## Testing Full Plugins
+
+```bash
+# Run all tests for a language
+pytest -q desloppify/languages/python/tests/
+
+# Run specific detector tests
+pytest -q desloppify/languages/typescript/tests/test_ts_smells.py
+
+# Validate plugin contracts (all languages)
+pytest -q desloppify/tests/lang/common/test_lang_standardization.py
+```
+
+## When to Build a Full Plugin
+
+Consider a full plugin when:
+
+<Steps>
+  <Step title="Language-Specific Patterns">
+    You need detectors that understand idioms beyond AST pattern matching:
+    - Python's `lru_cache` on methods with mutable args
+    - TypeScript's React hook dependency violations
+    - C#'s Entity Framework N+1 queries
+  </Step>
+
+  <Step title="Auto-Fixers with AST Rewriting">
+    Simple text replacement isn't enough — you need to:
+    - Rewrite imports while preserving order
+    - Refactor function signatures
+    - Extract components/functions
+  </Step>
+
+  <Step title="Framework Integration">
+    You want deep integration with framework-specific tools:
+    - Django ORM query optimization
+    - React component lifecycle analysis
+    - Flutter widget tree validation
+  </Step>
+
+  <Step title="Custom Scoring">
+    You need fine-grained control over:
+    - Phase execution order
+    - Detector → dimension mapping
+    - Severity thresholds
+  </Step>
+</Steps>
+
+<Info>
+  **Start generic, upgrade incrementally**: Most languages should start as generic plugins. Only invest in a full plugin when generic capabilities are insufficient.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Generic Plugins" icon="plug" href="/languages/generic-plugins">
+    Learn about tree-sitter and external tool integration
+  </Card>
+  <Card title="Add a New Language" icon="plus" href="/languages/adding-languages">
+    Guide to scaffolding a new language plugin
+  </Card>
+</CardGroup>

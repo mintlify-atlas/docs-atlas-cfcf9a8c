@@ -1,0 +1,276 @@
+---
+title: Project Configuration
+description: Comprehensive guide to .desloppify/config.json settings
+---
+
+## Overview
+
+Desloppify stores project-level configuration in `.desloppify/config.json`. This file controls scan behavior, scorecard generation, review settings, and quality thresholds.
+
+## Managing Configuration
+
+### View Current Config
+
+```bash
+desloppify config show
+```
+
+Displays all configuration keys with their current values and descriptions.
+
+### Set a Value
+
+```bash
+desloppify config set <key> <value>
+```
+
+**Examples:**
+
+```bash
+desloppify config set target_strict_score 98
+desloppify config set badge_path assets/scorecard.png
+desloppify config set generate_scorecard false
+```
+
+### Reset to Default
+
+```bash
+desloppify config unset <key>
+```
+
+Resets the key to its built-in default value.
+
+## Configuration Schema
+
+### Scoring & Targets
+
+<ParamField path="target_strict_score" type="integer" default="95">
+  North-star strict score target used to prioritize guidance.
+  
+  **Range:** 0-100
+  
+  **Example:**
+  ```bash
+  desloppify config set target_strict_score 98
+  ```
+</ParamField>
+
+### Scorecard Generation
+
+<ParamField path="generate_scorecard" type="boolean" default="true">
+  Generate scorecard image after each scan.
+  
+  **Values:** `true`, `false`, `1`, `0`, `yes`, `no`
+  
+  **Example:**
+  ```bash
+  desloppify config set generate_scorecard false
+  ```
+</ParamField>
+
+<ParamField path="badge_path" type="string" default="scorecard.png">
+  Output path for scorecard image.
+  
+  Supports both root-level files and nested paths.
+  
+  **Examples:**
+  ```bash
+  desloppify config set badge_path scorecard.png
+  desloppify config set badge_path assets/health.png
+  ```
+</ParamField>
+
+### Review Settings
+
+<ParamField path="review_max_age_days" type="integer" default="30">
+  Days before a file review is considered stale.
+  
+  Set to `0` or `never` to disable staleness checks.
+  
+  **Example:**
+  ```bash
+  desloppify config set review_max_age_days 60
+  desloppify config set review_max_age_days never
+  ```
+</ParamField>
+
+<ParamField path="holistic_max_age_days" type="integer" default="30">
+  Days before a holistic review is considered stale.
+  
+  Set to `0` or `never` to disable staleness checks.
+</ParamField>
+
+<ParamField path="review_batch_max_files" type="integer" default="80">
+  Max files assigned to each holistic review batch.
+  
+  Set to `0` for unlimited batch size.
+  
+  **Example:**
+  ```bash
+  desloppify config set review_batch_max_files 100
+  ```
+</ParamField>
+
+<ParamField path="review_dimensions" type="list" default="[]">
+  Override default per-file review dimensions.
+  
+  When empty, built-in defaults are used. This field is typically managed by the review system.
+</ParamField>
+
+### Path Filtering
+
+<ParamField path="exclude" type="list" default="[]">
+  Path patterns to exclude from scanning.
+  
+  Use the `exclude` command to add patterns:
+  
+  ```bash
+  desloppify exclude migrations
+  desloppify exclude tests
+  ```
+  
+  See [Exclusions](/configuration/exclusions) for more details.
+</ParamField>
+
+<ParamField path="ignore" type="list" default="[]">
+  Finding patterns to suppress.
+  
+  Patterns can match:
+  - File paths: `src/legacy/old-api.ts`
+  - Detector prefixes: `unused::`
+  - Specific findings: `unused::src/foo.tsx::React`
+</ParamField>
+
+<ParamField path="ignore_metadata" type="dict" default="{}">
+  Metadata for ignore patterns: `{pattern: {note, added_at}}`
+  
+  Automatically populated when using the `ignore` command with attestation.
+</ParamField>
+
+### Detector Thresholds
+
+<ParamField path="large_files_threshold" type="integer" default="0">
+  Override LOC threshold for large file detection.
+  
+  Set to `0` to use language-specific defaults.
+  
+  **Example:**
+  ```bash
+  desloppify config set large_files_threshold 500
+  ```
+</ParamField>
+
+<ParamField path="props_threshold" type="integer" default="0">
+  Override prop count threshold for bloated interface detection.
+  
+  Default is `14` when set to `0`.
+  
+  **Example:**
+  ```bash
+  desloppify config set props_threshold 20
+  ```
+</ParamField>
+
+### Output Control
+
+<ParamField path="finding_noise_budget" type="integer" default="10">
+  Max findings surfaced per detector in show/scan summaries.
+  
+  Set to `0` for unlimited output.
+  
+  **Example:**
+  ```bash
+  desloppify config set finding_noise_budget 20
+  ```
+</ParamField>
+
+<ParamField path="finding_noise_global_budget" type="integer" default="0">
+  Global cap for surfaced findings after per-detector budget.
+  
+  Set to `0` for unlimited.
+</ParamField>
+
+### Zone Overrides
+
+<ParamField path="zone_overrides" type="dict" default="{}">
+  Manual zone classifications: `{rel_path: zone_name}`
+  
+  Managed via the `zone` command:
+  
+  ```bash
+  desloppify zone set src/legacy legacy
+  desloppify zone show
+  ```
+</ParamField>
+
+### Language-Specific Settings
+
+<ParamField path="languages" type="dict" default="{}">
+  Language-specific settings: `{lang_name: {key: value}}`
+  
+  Used for language plugin configuration. Typically managed through language-specific commands or runtime options.
+</ParamField>
+
+### Internal State
+
+<ParamField path="needs_rescan" type="boolean" default="false">
+  Set when config changes may have invalidated cached scores.
+  
+  Automatically managed by the CLI when you modify configuration that affects scan results.
+</ParamField>
+
+## Configuration File Location
+
+The config file is always stored at:
+
+```
+.desloppify/config.json
+```
+
+Relative to your project root (determined by `DESLOPPIFY_ROOT` or current working directory).
+
+## Migration from State Files
+
+If you're upgrading from an older version that stored config in `state-*.json` files:
+
+1. The first time you run any command, config is automatically migrated
+2. Config keys are extracted into `.desloppify/config.json`
+3. State files are cleaned up (config keys removed)
+4. All existing values are preserved
+
+## Example Configuration
+
+```json .desloppify/config.json
+{
+  "target_strict_score": 98,
+  "review_max_age_days": 60,
+  "review_batch_max_files": 100,
+  "holistic_max_age_days": 30,
+  "generate_scorecard": true,
+  "badge_path": "assets/scorecard.png",
+  "exclude": [
+    "migrations",
+    "tests",
+    "__pycache__"
+  ],
+  "ignore": [],
+  "ignore_metadata": {},
+  "zone_overrides": {
+    "src/legacy": "legacy"
+  },
+  "review_dimensions": [],
+  "large_files_threshold": 0,
+  "props_threshold": 0,
+  "finding_noise_budget": 20,
+  "finding_noise_global_budget": 0,
+  "needs_rescan": false,
+  "languages": {}
+}
+```
+
+## Related Commands
+
+- [Environment Variables](/configuration/environment-variables) - Runtime environment overrides
+- [Exclusions](/configuration/exclusions) - Detailed guide to path filtering
+- `desloppify zone` - Manage zone classifications
+- `desloppify exclude` - Add exclusion patterns
+- `desloppify ignore` - Suppress specific findings
