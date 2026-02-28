@@ -12,6 +12,22 @@ The `plan done` command marks findings as resolved. It's the primary way to trac
 This command was previously called `desloppify resolve` and is now integrated into the plan workflow as `desloppify plan done`.
 </Note>
 
+## Related: Ignore Command
+
+There's also a separate `desloppify ignore` command that adds patterns to a permanent ignore list (distinct from resolution):
+
+```bash
+# Add pattern to ignore list permanently
+desloppify ignore "src/generated/**" \
+  --attest "I have actually verified this is auto-generated code. I am not gaming."
+```
+
+**Key differences:**
+- `plan done` - Marks specific findings as resolved (you fixed them)
+- `ignore` - Adds file/directory patterns to permanent ignore list (these paths won't be scanned)
+
+Use `ignore` for paths that should never be scanned (generated code, vendor files). Use `plan done` for issues you've actually fixed.
+
 ## Basic Usage
 
 ```bash
@@ -332,7 +348,6 @@ desloppify next --tier 1 --format json | jq -e '.items | length == 0'
 
 ## See Also
 
-- [Living Plan](/concepts/living-plan)
-- [Attestation](/concepts/attestation)
-- [Work Queue](/concepts/work-queue)
 - [Scoring System](/concepts/scoring)
+- [Workflow](/concepts/workflow)
+- [Tiers](/concepts/tiers)
