@@ -1,0 +1,147 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Desloppify",
+  "projectDescription": "Multi-language codebase quality scanner and technical debt tracker with AI-powered review",
+  "theme": "aspen",
+  "primaryColor": "#6366F1",
+  "lightColor": "#818CF8",
+  "darkColor": "#4F46E5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/scoring",
+              "concepts/detectors",
+              "concepts/tiers",
+              "concepts/workflow"
+            ]
+          },
+          {
+            "group": "Language Support",
+            "pages": [
+              "languages/overview",
+              "languages/full-plugins",
+              "languages/generic-plugins",
+              "languages/adding-languages"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/project-config",
+              "configuration/environment-variables",
+              "configuration/exclusions"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/review-system",
+              "advanced/subjective-scoring",
+              "advanced/zones",
+              "advanced/architecture"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "integration/ci-cd",
+              "integration/agents",
+              "integration/workflows"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Commands",
+        "groups": [
+          {
+            "group": "Core Commands",
+            "pages": [
+              "commands/scan",
+              "commands/status",
+              "commands/next",
+              "commands/resolve"
+            ]
+          },
+          {
+            "group": "Analysis",
+            "pages": [
+              "commands/show",
+              "commands/detect",
+              "commands/plan",
+              "commands/tree",
+              "commands/viz"
+            ]
+          },
+          {
+            "group": "Actions",
+            "pages": [
+              "commands/fix",
+              "commands/move",
+              "commands/review"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "commands/config",
+              "commands/zone",
+              "commands/exclude",
+              "commands/update-skill"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "commands/dev",
+              "commands/langs"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-language support (28+ languages with plugin system)",
+    "Automated code quality detection with mechanical and subjective analysis",
+    "AI-powered LLM review for design quality assessment",
+    "Tiered issue classification with weighted scoring system",
+    "Anti-gaming score that resists manipulation",
+    "Auto-fixers for mechanical issues",
+    "Interactive planning and prioritization",
+    "Scorecard badge generation for GitHub profiles"
+  ],
+  "publicApiSurface": [
+    "desloppify scan",
+    "desloppify status",
+    "desloppify next",
+    "desloppify show",
+    "desloppify resolve",
+    "desloppify fix",
+    "desloppify review",
+    "desloppify plan",
+    "desloppify detect",
+    "desloppify tree",
+    "desloppify viz",
+    "desloppify move",
+    "desloppify zone",
+    "desloppify config",
+    "desloppify exclude",
+    "desloppify update-skill",
+    "desloppify dev",
+    "desloppify langs"
+  ]
+}
